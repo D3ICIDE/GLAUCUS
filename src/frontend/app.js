@@ -300,7 +300,7 @@ function setSystemAlertChrome(glyph, title){
 function playSystemAlertEntrance(overlay){
     overlay.classList.remove('sa-flicker'); // restart the entrance animation if re-triggered
     void overlay.offsetWidth; // force reflow so the class removal/re-add actually replays
-    overlay.classList.add('active', 'sa-flicker');
+    overlay.classList.add('active');
     overlay.setAttribute('aria-hidden', 'false');
 
     systemAlertEscHandler = (e) => { if (e.key === 'Escape') dismissSystemAlert(); };
@@ -433,7 +433,7 @@ function addBotMessage(text, tag, warn){
     const wrap = document.createElement('div');
     wrap.className = 'msg bot';
     wrap.innerHTML = `
-      <div class="bot-avatar">O</div>
+      <div class="bot-avatar"></div>
       <div>
         <div class="bot-bubble">
           ${tag ? `<span class="tag${warn ? ' warn' : ''}">${tag}</span><br>` : ''}
@@ -572,3 +572,14 @@ function toggleListening(){
         recognition.start();
     }
 }
+
+window.addEventListener('load', () => {
+    showSystemAlert([
+        {
+            source: "DEBUG TEST",
+            riskLevel: "HIGH",
+            distanceMeters: 12500,
+            message: "This is a test hazard alert."
+        }
+    ]);
+});
