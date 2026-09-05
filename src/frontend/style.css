@@ -10,6 +10,22 @@
     --coral: #E2673F;
     --sea-glass: #7FA6A8;
     --ink: #12262E;
+    --sa-bg-1: #170608;
+    --sa-bg-2: #2c090d;
+
+    --sa-red: #ff2438;
+    --sa-red-bright: #ff5468;
+    --sa-red-dim: #7a1420;
+
+    --sa-blue: #29c1ff;
+    --sa-blue-bright: #7fe0ff;
+    --sa-blue-dim: #0c3b52;
+
+    --sa-text: #ffeef0;
+    --sa-text-dim: #ff9aa3;
+
+    --sa-mono: 'Share Tech Mono', monospace;
+    --sa-display: 'Rajdhani', sans-serif;
 
 
     /* * Typography Text Colors */
@@ -393,4 +409,245 @@ header {
     .coords-readout {
         display: none;
     }
+}
+.sa-overlay {
+    --sa-accent: var(--sa-red);
+    --sa-accent-bright: var(--sa-red-bright);
+    --sa-accent-dim: var(--sa-red-dim);
+    --sa-accent-text-dim: var(--sa-text-dim);
+
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(5, 3, 4, 0.86);
+    backdrop-filter: blur(2px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+}
+
+.sa-overlay.sa-clear {
+    --sa-accent: var(--sa-blue);
+    --sa-accent-bright: var(--sa-blue-bright);
+    --sa-accent-dim: var(--sa-blue-dim);
+    --sa-accent-text-dim: #a8e6ff;
+    background: rgba(3, 6, 9, 0.86);
+}
+
+.sa-overlay.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.sa-panel {
+    position: relative;
+    width: min(480px, 90vw);
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    padding: 28px 30px 24px;
+    background: linear-gradient(160deg, var(--sa-bg-1), var(--sa-bg-2));
+    border: 1px solid var(--sa-accent-dim);
+    clip-path: polygon(20px 0, 100% 0, 100% calc(100% - 20px), calc(100% - 20px) 100%, 0 100%, 0 20px);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--sa-accent) 15%, transparent),
+    0 0 40px color-mix(in srgb, var(--sa-accent) 25%, transparent);
+    animation: sa-pulse-border 2.2s ease-in-out infinite;
+    overflow: hidden;
+}
+
+.sa-overlay.sa-clear .sa-panel {
+    background: linear-gradient(160deg, #050c10, #071824);
+}
+
+@keyframes sa-pulse-border {
+    0%, 100% { filter: brightness(1); }
+    50%      { filter: brightness(1.25); }
+}
+
+/* one-shot entrance flicker, only plays when re-added via JS */
+.sa-overlay.sa-flicker .sa-panel {
+    animation: sa-pulse-border 2.2s ease-in-out infinite, sa-flicker-in 0.6s steps(2, end);
+}
+@keyframes sa-flicker-in {
+    0%   { opacity: 0; transform: scale(0.97); }
+    20%  { opacity: 1; }
+    35%  { opacity: 0.4; }
+    50%  { opacity: 1; }
+    70%  { opacity: 0.6; }
+    100% { opacity: 1; transform: scale(1); }
+}
+
+/* corner brackets — HUD-style, not a decorative border */
+.sa-corner {
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    border: 2px solid var(--sa-accent);
+    opacity: 0.9;
+}
+.sa-corner-tl { top: -1px; left: -1px; border-right: none; border-bottom: none; }
+.sa-corner-tr { top: -1px; right: -1px; border-left: none; border-bottom: none; }
+.sa-corner-bl { bottom: -1px; left: -1px; border-right: none; border-top: none; }
+.sa-corner-br { bottom: -1px; right: -1px; border-left: none; border-top: none; }
+
+/* scanline sweep — subtle, signals "live feed" rather than decoration */
+.sa-scanline {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 40px;
+    background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--sa-accent-bright) 12%, transparent), transparent);
+    animation: sa-scan 3.5s linear infinite;
+    pointer-events: none;
+}
+@keyframes sa-scan {
+    0%   { top: -40px; }
+    100% { top: 100%; }
+}
+
+.sa-header {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    font-family: var(--sa-display);
+    font-weight: 700;
+    font-size: 22px;
+    letter-spacing: 3px;
+    color: var(--sa-accent-bright);
+    text-shadow: 0 0 12px color-mix(in srgb, var(--sa-accent) 60%, transparent);
+}
+
+.sa-glyph {
+    font-size: 18px;
+    animation: sa-glyph-blink 1.4s ease-in-out infinite;
+}
+@keyframes sa-glyph-blink {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.35; }
+}
+
+.sa-subtitle {
+    margin-top: 4px;
+    text-align: center;
+    font-family: var(--sa-mono);
+    font-size: 12px;
+    letter-spacing: 2px;
+    color: var(--sa-accent-text-dim);
+}
+
+.sa-body {
+    margin-top: 20px;
+    padding-right: 4px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+.sa-body::-webkit-scrollbar { width: 4px; }
+.sa-body::-webkit-scrollbar-thumb { background: var(--sa-accent-dim); }
+
+.sa-entry {
+    border-left: 2px solid var(--sa-accent);
+    padding: 6px 0 6px 14px;
+}
+
+.sa-entry-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-family: var(--sa-display);
+    font-weight: 600;
+    font-size: 16px;
+    color: var(--sa-text);
+}
+
+.sa-entry-dist {
+    font-family: var(--sa-mono);
+    font-size: 13px;
+    color: var(--sa-accent-bright);
+}
+
+.sa-entry-risk {
+    margin-top: 2px;
+    font-family: var(--sa-mono);
+    font-size: 11px;
+    letter-spacing: 1.5px;
+    color: var(--sa-accent-text-dim);
+}
+
+.sa-entry-msg {
+    margin-top: 6px;
+    font-family: var(--sa-display);
+    font-size: 14.5px;
+    line-height: 1.45;
+    color: var(--sa-text);
+}
+
+.sa-ack {
+    margin-top: 22px;
+    align-self: center;
+    background: transparent;
+    border: 1px solid var(--sa-accent);
+    color: var(--sa-accent-bright);
+    font-family: var(--sa-mono);
+    font-size: 13px;
+    letter-spacing: 2px;
+    padding: 9px 26px;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+.sa-ack:hover,
+.sa-ack:focus-visible {
+    background: var(--sa-accent);
+    color: #0a0a0a;
+    outline: none;
+}
+
+/* ============================================================
+   Persistent "hazards active" status chip
+   Always red — it only ever appears while a hazard is genuinely active,
+   so it doesn't need an accent variant the way the popup does.
+   ============================================================ */
+.sa-badge {
+    position: fixed;
+    left: 50%;
+    bottom: 22px;
+    z-index: 6000; /* below the popup (9999), above map/chat content */
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 9px 18px;
+    background: rgba(23, 6, 8, 0.92);
+    border: 1px solid var(--sa-red);
+    color: var(--sa-red-bright);
+    font-family: var(--sa-mono);
+    font-size: 12px;
+    letter-spacing: 1.5px;
+    clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+    box-shadow: 0 0 20px rgba(255, 36, 56, 0.35);
+    opacity: 0;
+    transform: translate(-50%, 16px);
+    pointer-events: none;
+    transition: opacity 0.25s ease, transform 0.25s ease;
+}
+.sa-badge.active {
+    opacity: 1;
+    transform: translate(-50%, 0);
+    pointer-events: auto;
+}
+.sa-badge-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--sa-red);
+    box-shadow: 0 0 8px var(--sa-red);
+    animation: sa-glyph-blink 1.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .sa-panel, .sa-glyph, .sa-scanline, .sa-badge-dot { animation: none; }
 }

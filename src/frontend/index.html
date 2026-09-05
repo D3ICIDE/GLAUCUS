@@ -59,7 +59,7 @@
 
         <div class="sa-header">
             <span class="sa-glyph">⚠</span>
-            <span class="sa-title">SYSTEM WARNING</span>
+            <span class="sa-title" id="systemAlertTitle">SYSTEM WARNING</span>
             <span class="sa-glyph">⚠</span>
         </div>
         <div class="sa-subtitle" id="systemAlertSubtitle">HAZARD DETECTED IN RANGE</div>
@@ -68,6 +68,14 @@
 
         <button class="sa-ack" id="systemAlertAck" onclick="dismissSystemAlert()">[ ACKNOWLEDGE ]</button>
     </div>
+</div>
+
+<!-- Persistent status chip — visible for the whole time a hazard is in range,
+     independent of whether the popup above has been acknowledged. Fixed
+     positioned, so its place in the DOM doesn't matter. -->
+<div class="sa-badge" id="hazardBadge" aria-hidden="true">
+    <span class="sa-badge-dot"></span>
+    HAZARDS ACTIVE
 </div>
 
 

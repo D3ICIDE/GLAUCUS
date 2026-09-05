@@ -260,6 +260,44 @@ function showSystemAlert(hazardousHits){
         </div>
     `).join('');
 
+    overlay.classList.remove('sa-clear'); // ensure red palette, in case a clear-alert left this set
+    setSystemAlertChrome('⚠', 'SYSTEM WARNING');
+    playSystemAlertEntrance(overlay);
+    showHazardBadge();
+}
+
+// Blue "all clear" variant of the same popup — same panel, re-skinned via the
+// .sa-clear modifier class rather than a second markup block, so both states
+// stay visually consistent by construction.
+function showClearAlert(){
+    const overlay = document.getElementById('systemAlertOverlay');
+    const subtitle = document.getElementById('systemAlertSubtitle');
+    const body = document.getElementById('systemAlertBody');
+    if (!overlay || !subtitle || !body) {
+        addBotMessage('No hazardous advisories in range anymore.', 'HAZARD ALERT', false);
+        return;
+    }
+
+    subtitle.textContent = 'OUT OF HAZARD ZONE';
+    body.innerHTML = `
+        <div class="sa-entry">
+            <div class="sa-entry-msg">No hazardous advisories remain within the ${(GEOFENCE_RADIUS_METERS/1000).toFixed(0)}km search radius. Standing by.</div>
+        </div>
+    `;
+
+    overlay.classList.add('sa-clear');
+    setSystemAlertChrome('✓', 'ALL CLEAR');
+    playSystemAlertEntrance(overlay);
+    hideHazardBadge();
+}
+
+function setSystemAlertChrome(glyph, title){
+    const titleEl = document.getElementById('systemAlertTitle');
+    if (titleEl) titleEl.textContent = title;
+    document.querySelectorAll('#systemAlertOverlay .sa-glyph').forEach(el => el.textContent = glyph);
+}
+
+function playSystemAlertEntrance(overlay){
     overlay.classList.remove('sa-flicker'); // restart the entrance animation if re-triggered
     void overlay.offsetWidth; // force reflow so the class removal/re-add actually replays
     overlay.classList.add('active', 'sa-flicker');
@@ -272,12 +310,24 @@ function showSystemAlert(hazardousHits){
 function dismissSystemAlert(){
     const overlay = document.getElementById('systemAlertOverlay');
     if (!overlay) return;
-    overlay.classList.remove('active');
+    overlay.classList.remove('active', 'sa-clear');
     overlay.setAttribute('aria-hidden', 'true');
     if (systemAlertEscHandler) {
         document.removeEventListener('keydown', systemAlertEscHandler);
         systemAlertEscHandler = null;
     }
+}
+
+// ---------------- persistent "hazards active" status chip ----------------
+// Stays visible for the whole duration a hazard is in range, independent of
+// whether the popup itself has been acknowledged/dismissed.
+function showHazardBadge(){
+    const badge = document.getElementById('hazardBadge');
+    if (badge) badge.classList.add('active');
+}
+function hideHazardBadge(){
+    const badge = document.getElementById('hazardBadge');
+    if (badge) badge.classList.remove('active');
 }
 
 function renderGeofenceState(hits){
@@ -352,7 +402,7 @@ function renderGeofenceState(hits){
             showSystemAlert(hazardousHits); // full-screen emergency popup, not a chat bubble
         } else if (lastHazardState) {
             dismissSystemAlert();
-            addBotMessage('No hazardous advisories in range anymore.', 'HAZARD ALERT', false);
+            showClearAlert(); // blue "out of hazard zone" popup, same treatment as the warning
         }
         lastHazardState = currentState;
     }
