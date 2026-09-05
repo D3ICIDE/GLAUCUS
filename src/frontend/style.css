@@ -171,13 +171,20 @@ header {
     display: flex;
     flex-direction: column;
     justify-content: center;
+    
     /* background:var(--parchment); */
     background-color: var(--color-bg-base);
     color: var(--ink);
     width: 100%;
     transition: width 0.35s cubic-bezier(.4, 0, .2, 1);
     min-width: 0;
+    animation: chat-pannel 0.6s ease 1;
 
+}
+
+@keyframes chat-pannel {
+
+    
 }
 
 .main.map-open .chat-panel {
@@ -252,6 +259,8 @@ header {
 .msg.bot {
     align-self: flex-start;
     display: flex;
+    justify-content: center;
+    align-items: center;
     gap: 11px;
 }
 
@@ -309,7 +318,7 @@ header {
     gap: 10px;
     padding: 16px 22px;
     background: var(--parchment-dim);
-    border-top: 1px solid rgba(18, 38, 46, 0.1);
+    border-top: 1px solid rgba(21, 47, 58, 0.1);
     flex-shrink: 0;
 }
 
@@ -451,10 +460,12 @@ header {
     padding: 28px 30px 24px;
     background: linear-gradient(160deg, var(--sa-bg-1), var(--sa-bg-2));
     border: 1px solid var(--sa-accent-dim);
-    clip-path: polygon(20px 0, 100% 0, 100% calc(100% - 20px), calc(100% - 20px) 100%, 0 100%, 0 20px);
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--sa-accent) 15%, transparent),
     0 0 40px color-mix(in srgb, var(--sa-accent) 25%, transparent);
-    animation: sa-pulse-border 2.2s ease-in-out infinite;
+    /* animation: sa-pulse-border 2.2s ease-in-out 1; */
+        animation: sa-pulse-border  0.8s ease-in-out;
+        animation-iteration-count: 1;
+
     overflow: hidden;
 }
 
@@ -463,8 +474,22 @@ header {
 }
 
 @keyframes sa-pulse-border {
-    0%, 100% { filter: brightness(1); }
-    50%      { filter: brightness(1.25); }
+    
+     0% {
+        clip-path: inset(48% 0 53% 0);
+        opacity: 0;
+    }
+
+    100% {
+        clip-path: inset(0 0 0 0);
+        opacity: 1;
+    }
+
+
+
+
+
+
 }
 
 /* one-shot entrance flicker, only plays when re-added via JS */
