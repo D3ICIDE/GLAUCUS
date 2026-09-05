@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="stylesheet" href="./style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 
 </head>
@@ -46,6 +47,26 @@
             <div class="map-caption" id="mapCaption">TAMIL NADU · KERALA COAST — LIVE ADVISORY LAYER</div>
             <div id="map"></div>
         </div>
+    </div>
+</div>
+<div class="sa-overlay" id="systemAlertOverlay" role="alertdialog" aria-live="assertive" aria-hidden="true">
+    <div class="sa-panel">
+        <span class="sa-corner sa-corner-tl"></span>
+        <span class="sa-corner sa-corner-tr"></span>
+        <span class="sa-corner sa-corner-bl"></span>
+        <span class="sa-corner sa-corner-br"></span>
+        <div class="sa-scanline"></div>
+
+        <div class="sa-header">
+            <span class="sa-glyph">⚠</span>
+            <span class="sa-title">SYSTEM WARNING</span>
+            <span class="sa-glyph">⚠</span>
+        </div>
+        <div class="sa-subtitle" id="systemAlertSubtitle">HAZARD DETECTED IN RANGE</div>
+
+        <div class="sa-body" id="systemAlertBody"></div>
+
+        <button class="sa-ack" id="systemAlertAck" onclick="dismissSystemAlert()">[ ACKNOWLEDGE ]</button>
     </div>
 </div>
 

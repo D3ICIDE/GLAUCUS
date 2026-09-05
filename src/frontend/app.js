@@ -226,6 +226,60 @@ function popupHtmlFor(hit){
     return `<b>${hit.source}</b> [${hit.riskLevel}] — ${(hit.distanceMeters/1000).toFixed(1)}km<br>${formatHazardMessage(hit.message)}`;
 }
 
+// ---------------- SYSTEM ALERT (full-screen emergency popup) ----------------
+// Fires instead of a chat bubble when the vessel enters a hazardous state.
+// Deliberately modal — dismissed only via the acknowledge action or Escape,
+// never by clicking outside, since this represents an active safety condition.
+let systemAlertEscHandler = null;
+
+function showSystemAlert(hazardousHits){
+    const overlay = document.getElementById('systemAlertOverlay');
+    const subtitle = document.getElementById('systemAlertSubtitle');
+    const body = document.getElementById('systemAlertBody');
+    if (!overlay || !subtitle || !body) {
+        console.warn('System alert markup missing from index.html — falling back to chat.');
+        const summary = hazardousHits
+            .map(h => `<b>${h.source}</b> (${h.riskLevel}, ${(h.distanceMeters/1000).toFixed(1)}km): ${formatHazardMessage(h.message)}`)
+            .join('<br>');
+        addBotMessage(summary, 'HAZARD ALERT', true);
+        return;
+    }
+
+    subtitle.textContent = hazardousHits.length > 1
+        ? `${hazardousHits.length} HAZARDS DETECTED IN RANGE`
+        : 'HAZARD DETECTED IN RANGE';
+
+    body.innerHTML = hazardousHits.map(h => `
+        <div class="sa-entry">
+            <div class="sa-entry-row">
+                <span class="sa-entry-source">${h.source}</span>
+                <span class="sa-entry-dist">${(h.distanceMeters/1000).toFixed(1)} KM</span>
+            </div>
+            <div class="sa-entry-risk">RISK: ${(h.riskLevel || 'UNKNOWN').toUpperCase()}</div>
+            <div class="sa-entry-msg">${formatHazardMessage(h.message)}</div>
+        </div>
+    `).join('');
+
+    overlay.classList.remove('sa-flicker'); // restart the entrance animation if re-triggered
+    void overlay.offsetWidth; // force reflow so the class removal/re-add actually replays
+    overlay.classList.add('active', 'sa-flicker');
+    overlay.setAttribute('aria-hidden', 'false');
+
+    systemAlertEscHandler = (e) => { if (e.key === 'Escape') dismissSystemAlert(); };
+    document.addEventListener('keydown', systemAlertEscHandler);
+}
+
+function dismissSystemAlert(){
+    const overlay = document.getElementById('systemAlertOverlay');
+    if (!overlay) return;
+    overlay.classList.remove('active');
+    overlay.setAttribute('aria-hidden', 'true');
+    if (systemAlertEscHandler) {
+        document.removeEventListener('keydown', systemAlertEscHandler);
+        systemAlertEscHandler = null;
+    }
+}
+
 function renderGeofenceState(hits){
     hits = hits || [];
 
@@ -295,11 +349,9 @@ function renderGeofenceState(hits){
 
     if (currentState !== lastHazardState) {
         if (currentState) {
-            const summary = hazardousHits
-                .map(h => `<b>${h.source}</b> (${h.riskLevel}, ${(h.distanceMeters/1000).toFixed(1)}km): ${formatHazardMessage(h.message)}`)
-                .join('<br>');
-            addBotMessage(summary, 'HAZARD ALERT', true);
+            showSystemAlert(hazardousHits); // full-screen emergency popup, not a chat bubble
         } else if (lastHazardState) {
+            dismissSystemAlert();
             addBotMessage('No hazardous advisories in range anymore.', 'HAZARD ALERT', false);
         }
         lastHazardState = currentState;
