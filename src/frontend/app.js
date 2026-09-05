@@ -433,7 +433,7 @@ function addBotMessage(text, tag, warn){
     const wrap = document.createElement('div');
     wrap.className = 'msg bot';
     wrap.innerHTML = `
-      <div class="bot-avatar">O</div>
+      <div class="bot-avatar"></div>
       <div>
         <div class="bot-bubble">
           ${tag ? `<span class="tag${warn ? ' warn' : ''}">${tag}</span><br>` : ''}
