@@ -9,7 +9,6 @@
     <link rel="stylesheet" href="./style.css">
     <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-
 </head>
 <body>
 
@@ -17,7 +16,7 @@
     <header>
         <div class="brand">
             <span class="brand-sub">GLAUCUS</span>
-             <span class="coords-readout" id="coordsReadout">09.28°N · 79.31°E</span>
+            <span class="coords-readout" id="coordsReadout">09.28°N · 79.31°E</span>
         </div>
         <div class="header-right">
             <span class="toggle-label">Chart view</span>
@@ -32,19 +31,15 @@
             <div class="log" id="log"></div>
             <div class="listening-hint" id="listeningHint"></div>
             <div class="input-bar">
-                <button class="icon-btn mic-btn" id="micBtn" onclick="toggleListening()" title="Speak">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
-                </button>
-                <input type="text" id="textInput" placeholder="Ask about weather, tides, or where to fish…" onkeydown="if(event.key==='Enter')sendMessage()">
-                <button class="icon-btn send-btn" onclick="sendMessage()" title="Send">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M12 19V5M5 12l7-7 7 7"/>
-    </svg>
-                </button>
+                <div class="input-wrap">
+                    <input type="text" id="textInput" placeholder="Ask about weather, tides, or where to fish…" onkeydown="if(event.key==='Enter')sendMessage()">
+                    <button class="icon-btn mic-btn" id="micBtn" onclick="toggleListening()" title="Speak">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
+                    </button>
+                </div>
             </div>
         </div>
         <div class="map-panel">
-            <div class="map-caption" id="mapCaption">TAMIL NADU · KERALA COAST — LIVE ADVISORY LAYER</div>
             <div id="map"></div>
         </div>
     </div>
@@ -71,15 +66,14 @@
 </div>
 
 <!-- Persistent status chip — visible for the whole time a hazard is in range,
-     independent of whether the popup above has been acknowledged. Fixed
-     positioned, so its place in the DOM doesn't matter. -->
-<div class="sa-badge" id="hazardBadge" aria-hidden="true">
+     independent of whether the popup above has been acknowledged. Now
+     clickable: fires a fresh geofence check and re-opens the popup with
+     updated distances. Its own visibility is unaffected — that's still
+     driven entirely by renderGeofenceState()/showHazardBadge()/hideHazardBadge(). -->
+<div class="sa-badge" id="hazardBadge" onclick="onHazardBadgeClick()" role="button" tabindex="0" aria-hidden="true">
     <span class="sa-badge-dot"></span>
     HAZARDS ACTIVE
 </div>
-
-
-
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="app.js"></script>

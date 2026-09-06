@@ -45,7 +45,9 @@ let searchRadiusLayer = null;
 // fetched repeatedly). Key -> Leaflet layer.
 let drawnHazardLayers = new Map();
 
-let lastHazardState = null; // for enter/exit edge detection (no repeat alerts while lingering)
+let lastHazardState = null;   // for enter/exit edge detection (no repeat auto-popups while lingering)
+let lastHazardousHits = [];   // NEW — raw hazardous hits from the most recent check, so the
+// badge click can redisplay them (with updated distances) on demand
 
 function initMap(){
     if(mapInitialized) return;
@@ -78,9 +80,9 @@ function initMap(){
     requestGeofenceCheck(currentLat, currentLon, { immediate: true });
 
     // NOTE: auto-polling (setInterval-based continuous geofence checking) has been
-    // removed for now. Checks now only fire on explicit triggers: map open (above)
-    // and map click (below). Re-enable by restoring the setInterval call here if/when
-    // continuous GPS-tracking simulation is needed again.
+    // removed for now. Checks now only fire on explicit triggers: map open (above),
+    // map click (below), and the hazard badge click (new). Re-enable by restoring
+    // the setInterval call here if/when continuous GPS-tracking simulation is needed again.
     geofencePollHandle = null;
 
     mapInitialized = true;
@@ -100,8 +102,6 @@ function toggleMap(){
 }
 
 // ---------------- LIVE PFZ POINTS ----------------
-// Replaces the old hardcoded pfzPoints array — pulled from PoiTool.findWithinRadius
-// via LocalDevServer. Falls back silently (no points drawn) if the dev server isn't running.
 let pfzMarkers = [];
 async function loadNearbyPfz(){
     try {
@@ -128,26 +128,16 @@ async function loadNearbyPfz(){
 }
 
 // ---------------- GEOFENCE / HAZARD CHECK ----------------
-// GeoFenceToolWrapper.getHazardsWithGeometryForMap returns a flat JSON array of hits:
-//   [{ source, riskLevel, message, fetchedAt, distanceMeters, geometryJson }, ...]
-// geometryJson is a GeoJSON geometry string (Polygon/MultiPolygon/LineString/etc),
-// pre-simplified server-side (ST_SimplifyPreserveTopology) so payload stays reasonable
-// even for large shapes like the EEZ boundary. We draw each hit's real shape rather
-// than a generic marker.
 const GEOFENCE_RADIUS_METERS = 50000; // matches the wrapper's default 50km overload
 
-let geofenceAbortController = null;   // in-flight request, if any — aborted when superseded
+let geofenceAbortController = null;
 let geofenceDebounceTimer = null;
-let lastCheckedKey = null;            // rounded "lat,lon" of the last request actually sent
+let lastCheckedKey = null;
 
 function roundCoordKey(lat, lon){
-    // ~11m precision at the equator — plenty for "did the point actually change"
     return `${lat.toFixed(4)},${lon.toFixed(4)}`;
 }
 
-// Debounced/deduped entry point — use this everywhere instead of calling
-// checkGeofence directly. Collapses rapid repeated calls (double taps, a poll
-// tick landing right after a click, etc.) so we don't fire redundant requests.
 function requestGeofenceCheck(lat, lon, { immediate = false } = {}){
     clearTimeout(geofenceDebounceTimer);
     const run = () => checkGeofence(lat, lon);
@@ -158,14 +148,10 @@ function requestGeofenceCheck(lat, lon, { immediate = false } = {}){
 async function checkGeofence(lat, lon){
     const key = roundCoordKey(lat, lon);
 
-    // Same point (to ~11m) as the request currently in flight — skip rather than
-    // firing a second identical request while the first hasn't resolved yet.
     if (key === lastCheckedKey && geofenceAbortController) {
         return;
     }
 
-    // A request for a *different*, now-stale point is still in flight — cancel it.
-    // Its response would land after this newer one and could overwrite fresher state.
     if (geofenceAbortController) {
         geofenceAbortController.abort();
     }
@@ -182,7 +168,7 @@ async function checkGeofence(lat, lon){
         setConnState(true);
         renderGeofenceState(hits);
     } catch (err) {
-        if (err.name === 'AbortError') return; // expected — a newer request superseded this one
+        if (err.name === 'AbortError') return;
         setConnState(false);
         console.warn('Geofence check failed (is LocalDevServer running on :8080?):', err);
     } finally {
@@ -195,9 +181,6 @@ function isHazardous(hit){
     return level !== 'safe' && level !== '';
 }
 
-// message is polymorphic: a plain string for some sources, or a nested
-// { day, advisories: [{ text, status, boat_width }] } shape (seen from sva_advisory).
-// Render whatever shape shows up without assuming one schema.
 function formatHazardMessage(message){
     if (message == null) return '';
     if (typeof message === 'string') return message;
@@ -209,15 +192,11 @@ function formatHazardMessage(message){
                 .map(a => `${a.text || ''}${a.boat_width ? ` (boats &lt;${a.boat_width}m)` : ''}`)
                 .join('<br>');
         }
-        // generic object fallback — show a compact key: value listing
         return Object.entries(message).map(([k, v]) => `${k}: ${formatHazardMessage(v)}`).join('<br>');
     }
     return String(message);
 }
 
-// A hit's identity for redraw purposes. fetchedAt changes when the underlying data
-// for that source actually refreshes, so pairing it with source gives us a stable
-// key that only changes when there's something new to draw.
 function hazardKey(hit){
     return `${hit.source}::${hit.fetchedAt}`;
 }
@@ -227,9 +206,6 @@ function popupHtmlFor(hit){
 }
 
 // ---------------- SYSTEM ALERT (full-screen emergency popup) ----------------
-// Fires instead of a chat bubble when the vessel enters a hazardous state.
-// Deliberately modal — dismissed only via the acknowledge action or Escape,
-// never by clicking outside, since this represents an active safety condition.
 let systemAlertEscHandler = null;
 
 function showSystemAlert(hazardousHits){
@@ -260,15 +236,12 @@ function showSystemAlert(hazardousHits){
         </div>
     `).join('');
 
-    overlay.classList.remove('sa-clear'); // ensure red palette, in case a clear-alert left this set
+    overlay.classList.remove('sa-clear');
     setSystemAlertChrome('⚠', 'SYSTEM WARNING');
     playSystemAlertEntrance(overlay);
     showHazardBadge();
 }
 
-// Blue "all clear" variant of the same popup — same panel, re-skinned via the
-// .sa-clear modifier class rather than a second markup block, so both states
-// stay visually consistent by construction.
 function showClearAlert(){
     const overlay = document.getElementById('systemAlertOverlay');
     const subtitle = document.getElementById('systemAlertSubtitle');
@@ -298,8 +271,8 @@ function setSystemAlertChrome(glyph, title){
 }
 
 function playSystemAlertEntrance(overlay){
-    overlay.classList.remove('sa-flicker'); // restart the entrance animation if re-triggered
-    void overlay.offsetWidth; // force reflow so the class removal/re-add actually replays
+    overlay.classList.remove('sa-flicker');
+    void overlay.offsetWidth;
     overlay.classList.add('active');
     overlay.setAttribute('aria-hidden', 'false');
 
@@ -319,8 +292,9 @@ function dismissSystemAlert(){
 }
 
 // ---------------- persistent "hazards active" status chip ----------------
-// Stays visible for the whole duration a hazard is in range, independent of
-// whether the popup itself has been acknowledged/dismissed.
+// Visibility is driven entirely by renderGeofenceState() below, based on
+// whether a hazard is actually in range — the badge click handler further
+// down never touches this directly.
 function showHazardBadge(){
     const badge = document.getElementById('hazardBadge');
     if (badge) badge.classList.add('active');
@@ -328,6 +302,20 @@ function showHazardBadge(){
 function hideHazardBadge(){
     const badge = document.getElementById('hazardBadge');
     if (badge) badge.classList.remove('active');
+}
+
+// NEW — badge click handler. Fires a real fetch so distances/geometry are
+// current, then re-opens the popup. Doesn't manage badge visibility itself:
+// renderGeofenceState() (invoked inside checkGeofence) already shows/hides
+// the badge purely based on whether the vessel is still in a hazard zone.
+async function onHazardBadgeClick(){
+    await checkGeofence(currentLat, currentLon);
+
+    if (lastHazardousHits.length) {
+        showSystemAlert(lastHazardousHits); // updated distances baked in
+    }
+    // If no longer hazardous, renderGeofenceState has already hidden the
+    // badge as part of the check above — nothing to pop up.
 }
 
 function renderGeofenceState(hits){
@@ -354,11 +342,11 @@ function renderGeofenceState(hits){
         currentKeys.add(key);
 
         if (drawnHazardLayers.has(key)) {
-            return; // unchanged since last poll — leave the existing layer as-is
+            return;
         }
 
         if (!hit.geometryJson) {
-            return; // nothing to draw for this hit (shouldn't normally happen)
+            return;
         }
 
         let geom;
@@ -370,19 +358,32 @@ function renderGeofenceState(hits){
         }
 
         const hazardous = isHazardous(hit);
+        const hazardColor = hazardous ? '#E2673F' : '#7FA6A8';
+
         const layer = L.geoJSON(geom, {
             style: {
-                color: hazardous ? '#E2673F' : '#7FA6A8',
+                color: hazardColor,
                 weight: 2,
                 fillOpacity: hazardous ? 0.18 : 0.08
+            },
+            pointToLayer: (feature, latlng) => {
+                return L.circleMarker(latlng, {
+                    radius: hazardous ? 12 : 8,
+                    color: hazardColor,
+                    fillColor: hazardColor,
+                    fillOpacity: hazardous ? 0.35 : 0.15,
+                    weight: 2
+                });
             }
         });
         layer.bindPopup(popupHtmlFor(hit));
         layer.addTo(map);
         drawnHazardLayers.set(key, layer);
+        layer.bindPopup(popupHtmlFor(hit));
+        layer.addTo(map);
+        drawnHazardLayers.set(key, layer);
     });
 
-    // remove layers for hits that are no longer in range / no longer returned
     for (const [key, layer] of drawnHazardLayers) {
         if (!currentKeys.has(key)) {
             map.removeLayer(layer);
@@ -391,18 +392,19 @@ function renderGeofenceState(hits){
     }
 
     // ---- alert only on state CHANGE — enter/exit hazardous status ----
-    // (not on every poll while lingering in the same state)
     const hazardousHits = hits.filter(isHazardous);
+    lastHazardousHits = hazardousHits; // NEW — keep raw hits for the badge click to reuse
+
     const currentState = hazardousHits.length
         ? hazardousHits.map(h => h.source).sort().join(',')
         : null;
 
     if (currentState !== lastHazardState) {
         if (currentState) {
-            showSystemAlert(hazardousHits); // full-screen emergency popup, not a chat bubble
+            showSystemAlert(hazardousHits);
         } else if (lastHazardState) {
             dismissSystemAlert();
-            showClearAlert(); // blue "out of hazard zone" popup, same treatment as the warning
+            showClearAlert();
         }
         lastHazardState = currentState;
     }
@@ -482,19 +484,17 @@ async function sendMessage(){
         addBotMessage(data.text, data.tag, data.warn);
 
         if (data.mapUpdate) {
-            renderGeofenceState(data.mapUpdate); // expects the same flat hazard-hit array shape
+            renderGeofenceState(data.mapUpdate);
         }
     } catch (err) {
         setConnState(false);
         loadingEl.remove();
         addBotMessage("Couldn't reach the ORCA backend — is LocalDevServer running on :8080? Falling back to a general answer.", 'OFFLINE', true);
-        const r = generateResponse(text); // offline fallback so the demo still works without a server
+        const r = generateResponse(text);
         addBotMessage(r.text, r.tag, r.warn);
     }
 }
 
-// Offline fallback engine — used only if the backend is unreachable,
-// so the UI remains testable even before LocalDevServer is running.
 function generateResponse(userText){
     const t = userText.toLowerCase();
 
@@ -572,14 +572,3 @@ function toggleListening(){
         recognition.start();
     }
 }
-
-window.addEventListener('load', () => {
-    showSystemAlert([
-        {
-            source: "DEBUG TEST",
-            riskLevel: "HIGH",
-            distanceMeters: 12500,
-            message: "This is a test hazard alert."
-        }
-    ]);
-});
