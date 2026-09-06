@@ -203,14 +203,12 @@ header {
 .log {
     flex: 1;
     overflow-y: auto;
-    padding: 26px 26px 10px 26px;
+    padding: 26px;
     display: flex;
     flex-direction: column;
     gap: 16px;
-    width: 1100px;
-    position: relative;
-    left: 90px;
-    max-width: 100%;
+    width: 100%;
+    max-width: 900px;
     margin: 0 auto;
     box-sizing: border-box;
 }
@@ -226,6 +224,9 @@ header {
 
 .msg {
     max-width: 78%;
+    min-width: 0;
+    overflow-wrap: break-word;
+    word-break: break-word;
     line-height: 1.5;
     font-size: 1.5rem;
     color: var(--white);
@@ -235,8 +236,6 @@ header {
 }
 
 .msg.user {
-    position: relative;
-    right: 300px;
     align-self: flex-end;
     background-color: rgb(39, 35, 35);
     color: var(--parchment);
@@ -255,6 +254,12 @@ header {
 .bot-bubble {
     padding: 11px 16px;
     border-radius: 3px 14px 14px 14px;
+}
+
+.bot-bubble.loading {
+    color: var(--plotter-green-bright);
+    font-family: monospace;
+    font-size: 0.85rem;
 }
 
 .bot-bubble .tag {
@@ -280,17 +285,12 @@ header {
     margin-top: 5px;
 }
 
-/* ---------- INPUT BAR ----------
-   Matches a plain, borderless search-bar look (Gemini-style): one flat
-   fill color for the whole pill, no border/box-shadow/outline anywhere,
-   and the mic is pure icon — no visible shape at rest, just a faint
-   circular hover highlight for affordance. */
+/* ---------- INPUT BAR ---------- */
 .input-bar {
     display: flex;
     align-items: center;
     min-width: 45vw;
     max-width: 50vw;
-    /*width: auto;*/
     margin: 0 auto;
     padding: 16px 22px;
     background: var(--color-bg-base);
@@ -353,7 +353,7 @@ header {
 }
 
 .mic-btn:hover {
-    background: rgba(255, 255, 255, 0.08); /* hover-only affordance, no resting outline */
+    background: rgba(255, 255, 255, 0.08);
     color: var(--parchment);
 }
 
@@ -383,7 +383,7 @@ header {
     .coords-readout { display: none; }
 }
 
-/* ---------- SYSTEM ALERT (unchanged from earlier work) ---------- */
+/* ---------- SYSTEM ALERT ---------- */
 .sa-overlay {
     --sa-accent: var(--sa-red);
     --sa-accent-bright: var(--sa-red-bright);
@@ -416,10 +416,6 @@ header {
     pointer-events: auto;
 }
 
-#textInput {
-    /* legacy id-selector kept harmless; .input-wrap input rules above win */
-}
-
 .sa-panel {
     position: relative;
     width: min(480px, 90vw);
@@ -448,6 +444,7 @@ header {
 .sa-overlay.sa-flicker .sa-panel {
     animation: sa-pulse-border 2.2s ease-in-out infinite, sa-flicker-in 0.6s steps(2, end);
 }
+
 @keyframes sa-flicker-in {
     0%   { opacity: 0; transform: scale(0.97); }
     20%  { opacity: 1; }
@@ -478,6 +475,7 @@ header {
     animation: sa-scan 3.5s linear infinite;
     pointer-events: none;
 }
+
 @keyframes sa-scan {
     0%   { top: -40px; }
     100% { top: 100%; }
@@ -500,6 +498,7 @@ header {
     font-size: 18px;
     animation: sa-glyph-blink 1.4s ease-in-out infinite;
 }
+
 @keyframes sa-glyph-blink {
     0%, 100% { opacity: 1; }
     50%      { opacity: 0.35; }
@@ -575,6 +574,7 @@ header {
     cursor: pointer;
     transition: background 0.15s ease, color 0.15s ease;
 }
+
 .sa-ack:hover,
 .sa-ack:focus-visible {
     background: var(--sa-accent);
@@ -604,11 +604,13 @@ header {
     transition: opacity 0.25s ease, transform 0.25s ease;
     cursor: pointer;
 }
+
 .sa-badge.active {
     opacity: 1;
     transform: translate(-50%, 0);
     pointer-events: auto;
 }
+
 .sa-badge-dot {
     width: 8px;
     height: 8px;
@@ -621,3 +623,12 @@ header {
 @media (prefers-reduced-motion: reduce) {
     .sa-panel, .sa-glyph, .sa-scanline, .sa-badge-dot { animation: none; }
 }
+.agent-trace {
+    font-family: monospace;
+    font-size: 0.75rem;
+    color: var(--sea-glass);
+    margin-top: 6px;
+    cursor: pointer;
+}
+.trace-row { padding: 3px 0; border-bottom: 1px solid rgba(127,166,168,0.15); }
+.trace-row.error { color: var(--coral); }

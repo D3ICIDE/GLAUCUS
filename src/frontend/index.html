@@ -65,11 +65,6 @@
     </div>
 </div>
 
-<!-- Persistent status chip — visible for the whole time a hazard is in range,
-     independent of whether the popup above has been acknowledged. Now
-     clickable: fires a fresh geofence check and re-opens the popup with
-     updated distances. Its own visibility is unaffected — that's still
-     driven entirely by renderGeofenceState()/showHazardBadge()/hideHazardBadge(). -->
 <div class="sa-badge" id="hazardBadge" onclick="onHazardBadgeClick()" role="button" tabindex="0" aria-hidden="true">
     <span class="sa-badge-dot"></span>
     HAZARDS ACTIVE

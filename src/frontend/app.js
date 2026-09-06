@@ -379,9 +379,6 @@ function renderGeofenceState(hits){
         layer.bindPopup(popupHtmlFor(hit));
         layer.addTo(map);
         drawnHazardLayers.set(key, layer);
-        layer.bindPopup(popupHtmlFor(hit));
-        layer.addTo(map);
-        drawnHazardLayers.set(key, layer);
     });
 
     for (const [key, layer] of drawnHazardLayers) {
@@ -431,9 +428,40 @@ function addUserMessage(text){
     log.scrollTop = log.scrollHeight;
 }
 
-function addBotMessage(text, tag, warn){
+// UPDATED — now accepts an optional `trace` array (collected agent_start/
+// agent_end/agent_error events from the SSE stream for this query) and, if
+// present, renders it as a collapsible <details> block under the answer so
+// the record of which agents ran and what they returned isn't thrown away
+// once the loading bubble disappears.
+function addBotMessage(text, tag, warn, trace, elapsedMs){
     const wrap = document.createElement('div');
     wrap.className = 'msg bot';
+
+    let traceHtml = '';
+    if (trace && trace.length) {
+        const endEvents = trace.filter(e => e.type === 'agent_end');
+        const rows = trace.map(evt => {
+            if (evt.type === 'agent_start') {
+                return `<div class="trace-row trace-start"><b>${evt.agent}</b> started…</div>`;
+            }
+            if (evt.type === 'agent_end') {
+                const label = evt.agent === evt.outputKey ? evt.agent : `${evt.agent} → ${evt.outputKey}`;
+                const out = evt.output != null ? String(evt.output).slice(0, 300) : '';
+                return `<div class="trace-row"><b>${label}</b>${out ? `: ${out}` : ''}</div>`;
+            }
+            if (evt.type === 'agent_error') {
+                return `<div class="trace-row error"><b>${evt.agent}</b> failed: ${evt.message ?? 'unknown error'}</div>`;
+            }
+            return '';
+        }).join('');
+
+        const summaryLabel = elapsedMs != null
+            ? `Thought for ${formatElapsed(elapsedMs)}`
+            : `Show agent trace (${endEvents.length} step${endEvents.length === 1 ? '' : 's'})`;
+
+        traceHtml = `<details class="agent-trace"><summary>${summaryLabel}</summary>${rows}</details>`;
+    }
+
     wrap.innerHTML = `
       <div class="bot-avatar"></div>
       <div>
@@ -441,6 +469,7 @@ function addBotMessage(text, tag, warn){
           ${tag ? `<span class="tag${warn ? ' warn' : ''}">${tag}</span><br>` : ''}
           ${text}
         </div>
+        ${traceHtml}
         <div class="timestamp">${timeNow()}</div>
       </div>
     `;
@@ -461,6 +490,55 @@ function addLoadingMessage(){
     return wrap;
 }
 
+// ---------------- AGENT ACTIVITY STREAM ----------------
+let agentEventSource = null;
+let currentTrace = [];
+let streamDoneResolve = null;
+
+function startAgentStream(loadingEl, startTime){
+    if (agentEventSource) agentEventSource.close();
+    currentTrace = [];
+
+    agentEventSource = new EventSource(`${API_BASE}/events?sessionId=${sessionId}`);
+    const textEl = loadingEl.querySelector('.loading-text');
+    const timerEl = loadingEl.querySelector('.loading-timer');
+
+    const timerHandle = setInterval(() => {
+        timerEl.textContent = formatElapsed(performance.now() - startTime);
+    }, 100);
+
+    const donePromise = new Promise((resolve) => { streamDoneResolve = resolve; });
+
+    agentEventSource.onmessage = (e) => {
+        let evt;
+        try { evt = JSON.parse(e.data); } catch { return; }
+
+        if (evt.type === 'agent_start' || evt.type === 'agent_end' || evt.type === 'agent_error') {
+            currentTrace.push(evt);
+        }
+
+        if (evt.type === 'agent_start') textEl.textContent = `⏳ ${evt.agent} working…`;
+        if (evt.type === 'agent_end')   textEl.textContent = `✅ ${evt.agent} done — continuing…`;
+        if (evt.type === 'agent_error') textEl.textContent = `⚠ ${evt.agent} hit an error…`;
+
+        if (evt.type === 'done') {
+            agentEventSource.close();
+            agentEventSource = null;
+            if (streamDoneResolve) { streamDoneResolve(); streamDoneResolve = null; }
+        }
+        log.scrollTop = log.scrollHeight;
+    };
+
+    agentEventSource.onerror = () => {
+        if (agentEventSource) { agentEventSource.close(); agentEventSource = null; }
+        if (streamDoneResolve) { streamDoneResolve(); streamDoneResolve = null; }
+        clearInterval(timerHandle);
+    };
+
+    donePromise.then(() => clearInterval(timerHandle));
+    return donePromise;
+}
+
 async function sendMessage(){
     const input = document.getElementById('textInput');
     const text = input.value.trim();
@@ -469,6 +547,8 @@ async function sendMessage(){
     input.value = '';
 
     const loadingEl = addLoadingMessage();
+    const startTime = performance.now();
+    const streamDone = startAgentStream(loadingEl, startTime);
 
     try {
         const resp = await fetch(`${API_BASE}/api/v1/chat`, {
@@ -480,14 +560,26 @@ async function sendMessage(){
         const data = await resp.json();
         setConnState(true);
 
+        await Promise.race([
+            streamDone,
+            new Promise(resolve => setTimeout(resolve, 1500))
+        ]);
+
+        const elapsedMs = performance.now() - startTime;   // <-- capture before removing the bubble
+
         loadingEl.remove();
-        addBotMessage(data.text, data.tag, data.warn);
+        addBotMessage(data.text, data.tag, data.warn, currentTrace, elapsedMs);
 
         if (data.mapUpdate) {
-            renderGeofenceState(data.mapUpdate);
+            try {
+                renderGeofenceState(data.mapUpdate);
+            } catch (mapErr) {
+                console.warn('Map update failed to render (answer above is still valid):', mapErr);
+            }
         }
     } catch (err) {
         setConnState(false);
+        if (agentEventSource) { agentEventSource.close(); agentEventSource = null; }
         loadingEl.remove();
         addBotMessage("Couldn't reach the ORCA backend — is LocalDevServer running on :8080? Falling back to a general answer.", 'OFFLINE', true);
         const r = generateResponse(text);
@@ -571,4 +663,28 @@ function toggleListening(){
         listeningHint.textContent = 'Listening…';
         recognition.start();
     }
+}
+function addLoadingMessage(){
+    const wrap = document.createElement('div');
+    wrap.className = 'msg bot';
+    wrap.innerHTML = `
+      <div class="bot-avatar">O</div>
+      <div>
+        <div class="bot-bubble loading">
+          <span class="loading-text">Thinking…</span>
+          <span class="loading-timer">0s</span>
+        </div>
+      </div>
+    `;
+    log.appendChild(wrap);
+    log.scrollTop = log.scrollHeight;
+    return wrap;
+}
+
+function formatElapsed(ms){
+    const totalSeconds = ms / 1000;
+    if (totalSeconds < 60) return `${totalSeconds.toFixed(1)}s`;
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = Math.round(totalSeconds % 60);
+    return `${minutes}m ${seconds}s`;
 }
