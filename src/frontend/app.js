@@ -46,8 +46,14 @@ let searchRadiusLayer = null;
 let drawnHazardLayers = new Map();
 
 let lastHazardState = null;   // for enter/exit edge detection (no repeat auto-popups while lingering)
-let lastHazardousHits = [];   // NEW — raw hazardous hits from the most recent check, so the
+let lastHazardousHits = [];   // raw hazardous hits from the most recent check, so the
 // badge click can redisplay them (with updated distances) on demand
+
+// Hazards received while Chart View was closed (map == null). Replayed onto the
+// map the moment it's opened, instead of forcing initMap() to run early — forcing
+// it open against a display:none container can leave Leaflet with a broken tile
+// grid, which just trades this bug for a worse one.
+let pendingMapHits = null;
 
 function initMap(){
     if(mapInitialized) return;
@@ -55,12 +61,27 @@ function initMap(){
     // doubleClickZoom disabled: a double-click on the map otherwise fires two
     // 'click' events (plus a dblclick) at the same coordinates, which previously
     // meant two identical geofence checks fired back-to-back for every double-click.
-    map = L.map('map', { zoomControl:true, doubleClickZoom:false }).setView([currentLat, currentLon], 7);
+    // renderer: L.svg() forces the vector SVG layer to exist immediately (instead
+    // of being created lazily on first shape) so hazard glow gradients can be
+    // injected into it right away, before any hazard has been drawn.
+    map = L.map('map', { zoomControl:true, doubleClickZoom:false, renderer: L.svg() }).setView([currentLat, currentLon], 7);
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap contributors',
-        maxZoom: 12
+    // Esri World Dark Gray Canvas — dark, minimal basemap matching the GLAUCUS
+    // dark UI, free and keyless. (CartoDB Dark Matter, used previously, started
+    // requiring an API key and serves watermarked "API KEY REQUIRED" tiles
+    // without one — that's the grid of tiled text seen in testing, not a bug
+    // in this code.) Base layer is the dark ground/water fill; the Reference
+    // layer on top adds crisp labels and borders, which Esri ships as a
+    // separate tile set for this basemap so labels stay sharp at all zooms.
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+        attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ',
+        maxZoom: 16
     }).addTo(map);
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}', {
+        maxZoom: 16
+    }).addTo(map);
+
+    ensureHazardGradients(map);
 
     // Dev-only: click anywhere on the map to simulate the vessel being there,
     // so hazard/geofence transitions can be tested without real GPS movement.
@@ -81,11 +102,51 @@ function initMap(){
 
     // NOTE: auto-polling (setInterval-based continuous geofence checking) has been
     // removed for now. Checks now only fire on explicit triggers: map open (above),
-    // map click (below), and the hazard badge click (new). Re-enable by restoring
+    // map click (below), and the hazard badge click. Re-enable by restoring
     // the setInterval call here if/when continuous GPS-tracking simulation is needed again.
     geofencePollHandle = null;
 
     mapInitialized = true;
+}
+
+// Injects two radial-gradient defs (hazardous / informational) into the map's
+// SVG root, once. drawHazardsOnMap() references these by id as fillColor
+// ('url(#hazardGlowHazard)' etc.) — SVG's fill attribute accepts a paint-server
+// reference directly, and Leaflet just writes whatever string you give it into
+// that attribute, so this works without any Leaflet-specific gradient support.
+function ensureHazardGradients(map){
+    const renderer = map.getRenderer(map);
+    const svg = renderer && renderer._container;
+    if (!svg || svg.querySelector('#hazardGlowHazard')) return;
+
+    const NS = 'http://www.w3.org/2000/svg';
+    const defs = document.createElementNS(NS, 'defs');
+
+    const makeGlow = (id, color) => {
+        const grad = document.createElementNS(NS, 'radialGradient');
+        grad.setAttribute('id', id);
+        grad.setAttribute('cx', '50%');
+        grad.setAttribute('cy', '50%');
+        grad.setAttribute('r', '50%');
+
+        const stops = [
+            ['0%', color, '0.55'],
+            ['70%', color, '0.18'],
+            ['100%', color, '0']
+        ];
+        stops.forEach(([offset, stopColor, opacity]) => {
+            const stop = document.createElementNS(NS, 'stop');
+            stop.setAttribute('offset', offset);
+            stop.setAttribute('stop-color', stopColor);
+            stop.setAttribute('stop-opacity', opacity);
+            grad.appendChild(stop);
+        });
+        return grad;
+    };
+
+    defs.appendChild(makeGlow('hazardGlowHazard', '#E2673F'));
+    defs.appendChild(makeGlow('hazardGlowSafe', '#7FA6A8'));
+    svg.insertBefore(defs, svg.firstChild);
 }
 
 function toggleMap(){
@@ -97,6 +158,13 @@ function toggleMap(){
         setTimeout(() => {
             initMap();
             map && map.invalidateSize();
+
+            // Draw whatever hazard state arrived from chat while the panel was
+            // closed. Only the most recent set is kept, so this is always current.
+            if (pendingMapHits) {
+                drawHazardsOnMap(pendingMapHits);
+                pendingMapHits = null;
+            }
         }, 380);
     }
 }
@@ -201,8 +269,35 @@ function hazardKey(hit){
     return `${hit.source}::${hit.fetchedAt}`;
 }
 
+// Two backend shapes are in play: /api/v1/chat's mapUpdate sends the leaner
+// post-Bug#1 shape (hit.geometry, already-parsed object; no distanceMeters or
+// message), while /api/v1/geofence/check still sends the older shape
+// (hit.geometryJson as a string, plus distanceMeters/message). Handle both.
+function getHazardGeometry(hit){
+    if (hit.geometry) return hit.geometry;
+    if (hit.geometryJson) {
+        try {
+            return JSON.parse(hit.geometryJson);
+        } catch (e) {
+            console.warn('Unparseable geometryJson for', hit.source, e);
+            return null;
+        }
+    }
+    return null;
+}
+
+// distanceMeters isn't present on hazards that arrived via chat (mapUpdate) —
+// return '' rather than producing "NaN km".
+function formatDistanceKm(hit){
+    return (typeof hit.distanceMeters === 'number')
+        ? `${(hit.distanceMeters / 1000).toFixed(1)}km`
+        : '';
+}
+
 function popupHtmlFor(hit){
-    return `<b>${hit.source}</b> [${hit.riskLevel}] — ${(hit.distanceMeters/1000).toFixed(1)}km<br>${formatHazardMessage(hit.message)}`;
+    const dist = formatDistanceKm(hit);
+    const msg = hit.message != null ? `<br>${formatHazardMessage(hit.message)}` : '';
+    return `<b>${hit.source}</b> [${hit.riskLevel}]${dist ? ` — ${dist}` : ''}${msg}`;
 }
 
 // ---------------- SYSTEM ALERT (full-screen emergency popup) ----------------
@@ -215,7 +310,7 @@ function showSystemAlert(hazardousHits){
     if (!overlay || !subtitle || !body) {
         console.warn('System alert markup missing from index.html — falling back to chat.');
         const summary = hazardousHits
-            .map(h => `<b>${h.source}</b> (${h.riskLevel}, ${(h.distanceMeters/1000).toFixed(1)}km): ${formatHazardMessage(h.message)}`)
+            .map(h => `<b>${h.source}</b> (${h.riskLevel}${formatDistanceKm(h) ? `, ${formatDistanceKm(h)}` : ''}): ${formatHazardMessage(h.message)}`)
             .join('<br>');
         addBotMessage(summary, 'HAZARD ALERT', true);
         return;
@@ -225,16 +320,19 @@ function showSystemAlert(hazardousHits){
         ? `${hazardousHits.length} HAZARDS DETECTED IN RANGE`
         : 'HAZARD DETECTED IN RANGE';
 
-    body.innerHTML = hazardousHits.map(h => `
+    body.innerHTML = hazardousHits.map(h => {
+        const dist = formatDistanceKm(h);
+        return `
         <div class="sa-entry">
             <div class="sa-entry-row">
                 <span class="sa-entry-source">${h.source}</span>
-                <span class="sa-entry-dist">${(h.distanceMeters/1000).toFixed(1)} KM</span>
+                ${dist ? `<span class="sa-entry-dist">${dist.toUpperCase()}</span>` : ''}
             </div>
             <div class="sa-entry-risk">RISK: ${(h.riskLevel || 'UNKNOWN').toUpperCase()}</div>
             <div class="sa-entry-msg">${formatHazardMessage(h.message)}</div>
         </div>
-    `).join('');
+    `;
+    }).join('');
 
     overlay.classList.remove('sa-clear');
     setSystemAlertChrome('⚠', 'SYSTEM WARNING');
@@ -304,8 +402,8 @@ function hideHazardBadge(){
     if (badge) badge.classList.remove('active');
 }
 
-// NEW — badge click handler. Fires a real fetch so distances/geometry are
-// current, then re-opens the popup. Doesn't manage badge visibility itself:
+// Badge click handler. Fires a real fetch so distances/geometry are current,
+// then re-opens the popup. Doesn't manage badge visibility itself:
 // renderGeofenceState() (invoked inside checkGeofence) already shows/hides
 // the badge purely based on whether the vessel is still in a hazard zone.
 async function onHazardBadgeClick(){
@@ -318,9 +416,42 @@ async function onHazardBadgeClick(){
     // badge as part of the check above — nothing to pop up.
 }
 
+// Handles hazard state that isn't tied to Leaflet: alerts, the persistent
+// badge, and (via showSystemAlert's fallback) chat. Always runs, regardless
+// of whether Chart View has ever been opened.
 function renderGeofenceState(hits){
     hits = hits || [];
 
+    const hazardousHits = hits.filter(isHazardous);
+    lastHazardousHits = hazardousHits;
+
+    const currentState = hazardousHits.length
+        ? hazardousHits.map(h => h.source).sort().join(',')
+        : null;
+
+    if (currentState !== lastHazardState) {
+        if (currentState) {
+            showSystemAlert(hazardousHits);
+        } else if (lastHazardState) {
+            dismissSystemAlert();
+            showClearAlert();
+        }
+        lastHazardState = currentState;
+    }
+
+    // Actual Leaflet drawing needs a real, initialized map. If Chart View
+    // hasn't been opened yet, stash the hits and draw them the moment it is,
+    // instead of forcing initMap() to run against a hidden container.
+    if (!map) {
+        pendingMapHits = hits;
+        return;
+    }
+    drawHazardsOnMap(hits);
+}
+
+// Pure Leaflet drawing — only ever called once `map` is known to exist
+// (either live, from renderGeofenceState, or replayed from toggleMap).
+function drawHazardsOnMap(hits){
     // ---- search-radius indicator around the query point (context only) ----
     const anyHazard = hits.some(isHazardous);
     const radiusColor = anyHazard ? '#E2673F' : '#7FA6A8';
@@ -345,39 +476,43 @@ function renderGeofenceState(hits){
             return;
         }
 
-        if (!hit.geometryJson) {
-            return;
-        }
-
-        let geom;
-        try {
-            geom = JSON.parse(hit.geometryJson);
-        } catch (e) {
-            console.warn('Unparseable geometryJson for', hit.source, e);
+        const geom = getHazardGeometry(hit);
+        if (!geom) {
             return;
         }
 
         const hazardous = isHazardous(hit);
         const hazardColor = hazardous ? '#E2673F' : '#7FA6A8';
+        const glowFill = hazardous ? 'url(#hazardGlowHazard)' : 'url(#hazardGlowSafe)';
 
         const layer = L.geoJSON(geom, {
             style: {
                 color: hazardColor,
-                weight: 2,
-                fillOpacity: hazardous ? 0.18 : 0.08
+                weight: 1.5,
+                opacity: 0.9,
+                fillColor: glowFill,
+                fillOpacity: 1 // the gradient itself fades to transparent; this just lets it show fully
             },
             pointToLayer: (feature, latlng) => {
                 return L.circleMarker(latlng, {
-                    radius: hazardous ? 12 : 8,
+                    radius: hazardous ? 16 : 11,
                     color: hazardColor,
-                    fillColor: hazardColor,
-                    fillOpacity: hazardous ? 0.35 : 0.15,
-                    weight: 2
+                    weight: 1.5,
+                    fillColor: glowFill,
+                    fillOpacity: 1
                 });
             }
         });
         layer.bindPopup(popupHtmlFor(hit));
         layer.addTo(map);
+
+        // Soft glow on the outline itself (CSS drop-shadow on the SVG path/circle),
+        // so the boundary reads as a glow rather than a hard line on the dark tiles.
+        layer.eachLayer(sub => {
+            const el = sub.getElement && sub.getElement();
+            if (el) el.style.filter = `drop-shadow(0 0 5px ${hazardColor}99)`;
+        });
+
         drawnHazardLayers.set(key, layer);
     });
 
@@ -386,24 +521,6 @@ function renderGeofenceState(hits){
             map.removeLayer(layer);
             drawnHazardLayers.delete(key);
         }
-    }
-
-    // ---- alert only on state CHANGE — enter/exit hazardous status ----
-    const hazardousHits = hits.filter(isHazardous);
-    lastHazardousHits = hazardousHits; // NEW — keep raw hits for the badge click to reuse
-
-    const currentState = hazardousHits.length
-        ? hazardousHits.map(h => h.source).sort().join(',')
-        : null;
-
-    if (currentState !== lastHazardState) {
-        if (currentState) {
-            showSystemAlert(hazardousHits);
-        } else if (lastHazardState) {
-            dismissSystemAlert();
-            showClearAlert();
-        }
-        lastHazardState = currentState;
     }
 }
 
@@ -428,11 +545,10 @@ function addUserMessage(text){
     log.scrollTop = log.scrollHeight;
 }
 
-// UPDATED — now accepts an optional `trace` array (collected agent_start/
-// agent_end/agent_error events from the SSE stream for this query) and, if
-// present, renders it as a collapsible <details> block under the answer so
-// the record of which agents ran and what they returned isn't thrown away
-// once the loading bubble disappears.
+// Accepts an optional `trace` array (collected agent_start/agent_end/agent_error
+// events from the SSE stream for this query) and, if present, renders it as a
+// collapsible <details> block under the answer so the record of which agents ran
+// and what they returned isn't thrown away once the loading bubble disappears.
 function addBotMessage(text, tag, warn, trace, elapsedMs){
     const wrap = document.createElement('div');
     wrap.className = 'msg bot';
@@ -483,7 +599,12 @@ function addLoadingMessage(){
     wrap.className = 'msg bot';
     wrap.innerHTML = `
       <div class="bot-avatar">O</div>
-      <div><div class="bot-bubble loading">Thinking…</div></div>
+      <div>
+        <div class="bot-bubble loading">
+          <span class="loading-text">Thinking…</span>
+          <span class="loading-timer">0s</span>
+        </div>
+      </div>
     `;
     log.appendChild(wrap);
     log.scrollTop = log.scrollHeight;
@@ -663,22 +784,6 @@ function toggleListening(){
         listeningHint.textContent = 'Listening…';
         recognition.start();
     }
-}
-function addLoadingMessage(){
-    const wrap = document.createElement('div');
-    wrap.className = 'msg bot';
-    wrap.innerHTML = `
-      <div class="bot-avatar">O</div>
-      <div>
-        <div class="bot-bubble loading">
-          <span class="loading-text">Thinking…</span>
-          <span class="loading-timer">0s</span>
-        </div>
-      </div>
-    `;
-    log.appendChild(wrap);
-    log.scrollTop = log.scrollHeight;
-    return wrap;
 }
 
 function formatElapsed(ms){
