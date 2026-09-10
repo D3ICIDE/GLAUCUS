@@ -784,3 +784,37 @@ header {
 }
 .trace-row { padding: 3px 0; border-bottom: 1px solid rgba(127,166,168,0.15); }
 .trace-row.error { color: var(--coral); }
+
+
+
+
+#langSelect{
+ padding-left:10px;
+margin: 0 10px;
+ border-radius:var(--radius-sm);
+ /* text-align: center; */
+ height:40px;
+ width:150px;
+ border-color: transparent;
+background-color:#161920;
+ color: var(--white);
+ cursor: pointer;
+ font-size: 1rem;
+ outline: transparent;
+}
+
+
+#langSelect:hover{
+
+
+    outline:1px solid gray;
+
+
+    transition: outline 0.5s ease-in-out;
+}
+
+
+
+
+
+

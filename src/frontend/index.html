@@ -14,6 +14,8 @@
 
 <div class="app">
     <header>
+                        <select id="langSelect"></select>
+
         <div class="brand">
             <span class="brand-sub">GLAUCUS</span>
             <span class="coords-readout" id="coordsReadout">09.28°N · 79.31°E</span>
@@ -31,7 +33,6 @@
             <div class="log" id="log"></div>
             <div class="listening-hint" id="listeningHint"></div>
             <div class="input-bar">
-                <select id="langSelect"></select>
                 <div class="input-wrap">
                     <input type="text" id="textInput" placeholder="Ask about weather, tides, or where to fish…" onkeydown="if(event.key==='Enter')sendMessage()">
                     <button class="icon-btn mic-btn" id="micBtn" onclick="toggleListening()" title="Speak">
