@@ -5,12 +5,14 @@ const sessionId = crypto.randomUUID();
 // ---------------- POSITION STATE ----------------
 
 let currentLat = 9.9, currentLon = 78.5;
+let hasRealLocation = false; // NEW: true once geolocation resolves or the user clicks the map
 
 if (navigator.geolocation) {
     navigator.geolocation.watchPosition(
         (pos) => {
             currentLat = pos.coords.latitude;
             currentLon = pos.coords.longitude;
+            hasRealLocation = true; // NEW
             updateCoordsReadout();
             if (map) map.setView([currentLat, currentLon]);
         },
@@ -30,11 +32,10 @@ let map = null;
 let mapInitialized = false;
 let geofencePollHandle = null;
 
-
 let searchRadiusLayer = null;
-
-
 let drawnHazardLayers = new Map();
+let pendingMapHits = null;
+let pendingPoiHits = null;
 
 let lastHazardState = null;   // for enter/exit edge detection (no repeat auto-popups while lingering)
 let lastHazardousHits = [];   // raw hazardous hits from the most recent check, so the
@@ -45,7 +46,6 @@ function initMap(){
     if(mapInitialized) return;
 
     map = L.map('map', { zoomControl:true, doubleClickZoom:false, renderer: L.svg() }).setView([currentLat, currentLon], 7);
-
 
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
         attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ',
@@ -62,6 +62,7 @@ function initMap(){
     map.on('click', (e) => {
         currentLat = e.latlng.lat;
         currentLon = e.latlng.lng;
+        hasRealLocation = true; // NEW: a deliberate click counts as a real position
         updateCoordsReadout();
         L.circleMarker([currentLat, currentLon], {
             radius: 5, color:'#F5EFE2', fillColor:'#F5EFE2', fillOpacity:1, weight:1
@@ -70,7 +71,13 @@ function initMap(){
     });
 
     loadNearbyPfz();
-    requestGeofenceCheck(currentLat, currentLon, { immediate: true });
+
+    // NEW: only auto-run the initial hazard check once we trust the coordinates —
+    // otherwise a zero-hit check at the unverified default location would wipe
+    // any hazards already drawn from chat and pop the "all clear" alert.
+    if (hasRealLocation) {
+        requestGeofenceCheck(currentLat, currentLon, { immediate: true });
+    }
 
     geofencePollHandle = null;
 
@@ -123,8 +130,12 @@ function toggleMap(){
             map && map.invalidateSize();
 
             if (pendingMapHits) {
-                drawHazardsOnMap(pendingMapHits);
+                drawHazardsOnMap(pendingMapHits, 'geofence');
                 pendingMapHits = null;
+            }
+            if (pendingPoiHits) {
+                drawPoisOnMap(pendingPoiHits);
+                pendingPoiHits = null;
             }
         }, 380);
     }
@@ -154,6 +165,49 @@ async function loadNearbyPfz(){
         setConnState(false);
         console.warn('Could not load live PFZ points (is LocalDevServer running on :8080?):', err);
     }
+}
+
+let poiMarkers = [];
+
+const poiTypeMeta = {
+    landing_centre: { icon: '🛥️', color: '#2FBE9C', fill: '#1E8A72' },
+    port:           { icon: '⚓', color: '#4FA8FF', fill: '#2A6FCC' },
+    pfz:            { icon: '🐟', color: '#2FBE9C', fill: '#1E8A72' },
+};
+
+function poiDivIcon(poiType){
+    const meta = poiTypeMeta[poiType] || { icon: '📍', color: '#CCCCCC', fill: '#999999' };
+    return L.divIcon({
+        className: 'poi-div-icon',
+        html: `
+            <div style="
+                width: 28px; height: 28px;
+                border-radius: 50%;
+                background: ${meta.fill};
+                border: 2px solid ${meta.color};
+                display: flex; align-items: center; justify-content: center;
+                font-size: 14px;
+                box-shadow: 0 0 6px ${meta.color}99;
+            ">${meta.icon}</div>
+        `,
+        iconSize: [28, 28],
+        iconAnchor: [14, 14],
+        popupAnchor: [0, -14],
+    });
+}
+
+function drawPoisOnMap(pois){
+    poiMarkers.forEach(m => map.removeLayer(m));
+    poiMarkers = [];
+
+    pois.forEach(p => {
+        const marker = L.marker([p.lat, p.lon], {
+            icon: poiDivIcon(p.poi_type)
+        }).addTo(map);
+        const dist = (p.distanceKm ?? -1) >= 0 ? `${p.distanceKm.toFixed(1)} km away` : '';
+        marker.bindPopup(`<b>${p.name}</b>${dist ? `<br>${dist}` : ''}`);
+        poiMarkers.push(marker);
+    });
 }
 
 // ---------------- GEOFENCE / HAZARD CHECK ----------------
@@ -195,7 +249,7 @@ async function checkGeofence(lat, lon){
         if (!resp.ok) throw new Error(`status ${resp.status}`);
         const hits = await resp.json();
         setConnState(true);
-        renderGeofenceState(hits);
+        renderGeofenceState(hits); // this path is always 'geofence' source
     } catch (err) {
         if (err.name === 'AbortError') return;
         setConnState(false);
@@ -233,8 +287,10 @@ function stripHtml(html){
     return String(html).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-function hazardKey(hit){
-    return `${hit.source}::${hit.fetchedAt}`;
+// NEW: source is folded into the key so hazards from chat and hazards from
+// the geofence check never collide or get pruned against each other.
+function hazardKey(hit, source){
+    return `${source}::${hit.source}::${hit.fetchedAt}`;
 }
 
 function getHazardGeometry(hit){
@@ -410,8 +466,6 @@ function showSystemAlert(hazardousHits, { speak = true } = {}){
     if (speak) {
         speakInUserLanguage(hazardousHitsToSpeechText(hazardousHits));
     }
-
-
 }
 
 function showClearAlert(){
@@ -480,10 +534,11 @@ async function onHazardBadgeClick(){
     if (lastHazardousHits.length) {
         showSystemAlert(lastHazardousHits); // updated distances baked in
     }
-
 }
 
-function renderGeofenceState(hits, { speak = true } = {}){
+// NEW: source defaults to 'geofence' since that's the only caller of this
+// function directly; chat's mapUpdate path passes 'chat' explicitly below.
+function renderGeofenceState(hits, { speak = true, source = 'geofence' } = {}){
     hits = hits || [];
 
     const hazardousHits = hits.filter(isHazardous);
@@ -506,11 +561,13 @@ function renderGeofenceState(hits, { speak = true } = {}){
         pendingMapHits = hits;
         return;
     }
-    drawHazardsOnMap(hits);
+    drawHazardsOnMap(hits, source);
 }
 
-
-function drawHazardsOnMap(hits){
+// NEW: source parameter, folded into hazardKey and used to scope which
+// existing layers get pruned — a zero-hit check from one source can no
+// longer delete hazards that came from a different source.
+function drawHazardsOnMap(hits, source = 'geofence'){
     // ---- search-radius indicator around the query point (context only) ----
     const anyHazard = hits.some(isHazardous);
     const radiusColor = anyHazard ? '#E2673F' : '#7FA6A8';
@@ -528,7 +585,7 @@ function drawHazardsOnMap(hits){
     const currentKeys = new Set();
 
     hits.forEach(hit => {
-        const key = hazardKey(hit);
+        const key = hazardKey(hit, source);
         currentKeys.add(key);
 
         if (drawnHazardLayers.has(key)) {
@@ -550,7 +607,7 @@ function drawHazardsOnMap(hits){
                 weight: 1.5,
                 opacity: 0.9,
                 fillColor: glowFill,
-                fillOpacity: 1 // the gradient itself fades to transparent; this just lets it show fully
+                fillOpacity: 1
             },
             pointToLayer: (feature, latlng) => {
                 return L.circleMarker(latlng, {
@@ -565,8 +622,6 @@ function drawHazardsOnMap(hits){
         layer.bindPopup(popupHtmlFor(hit));
         layer.addTo(map);
 
-        // Soft glow on the outline itself (CSS drop-shadow on the SVG path/circle),
-        // so the boundary reads as a glow rather than a hard line on the dark tiles.
         layer.eachLayer(sub => {
             const el = sub.getElement && sub.getElement();
             if (el) el.style.filter = `drop-shadow(0 0 5px ${hazardColor}99)`;
@@ -575,8 +630,9 @@ function drawHazardsOnMap(hits){
         drawnHazardLayers.set(key, layer);
     });
 
+    // NEW: only prune layers belonging to this same source
     for (const [key, layer] of drawnHazardLayers) {
-        if (!currentKeys.has(key)) {
+        if (key.startsWith(`${source}::`) && !currentKeys.has(key)) {
             map.removeLayer(layer);
             drawnHazardLayers.delete(key);
         }
@@ -604,10 +660,6 @@ function addUserMessage(text){
     log.scrollTop = log.scrollHeight;
 }
 
-// Accepts an optional `trace` array (collected agent_start/agent_end/agent_error
-// events from the SSE stream for this query) and, if present, renders it as a
-// collapsible <details> block under the answer so the record of which agents ran
-// and what they returned isn't thrown away once the loading bubble disappears.
 function addBotMessage(text, tag, warn, trace, elapsedMs){
     const wrap = document.createElement('div');
     wrap.className = 'msg bot';
@@ -704,14 +756,12 @@ function startAgentStream(loadingEl, startTime){
         if (evt.type === 'token') {
             if (!answerStarted) {
                 answerStarted = true;
-                bubbleEl.classList.add('answer-streaming'); // drop the "thinking" pulse look, keep the timer running
+                bubbleEl.classList.add('answer-streaming');
                 textEl.textContent = '';
             }
             streamedText += evt.text;
             textEl.textContent = streamedText;
         } else if (!answerStarted) {
-            // pre-answer phase only — once tokens arrive, agent status stops
-            // fighting with the answer text for the same element
             if (evt.type === 'agent_start') textEl.textContent = `⏳ ${evt.agent} working…`;
             if (evt.type === 'agent_end')   textEl.textContent = `✅ ${evt.agent} done — continuing…`;
             if (evt.type === 'agent_error') textEl.textContent = `⚠ ${evt.agent} hit an error…`;
@@ -761,17 +811,37 @@ async function sendMessage(){
             new Promise(resolve => setTimeout(resolve, 1500))
         ]);
 
-        const elapsedMs = performance.now() - startTime;   // <-- capture before removing the bubble
+        const elapsedMs = performance.now() - startTime;
 
         loadingEl.remove();
         addBotMessage(data.text, data.tag, data.warn, currentTrace, elapsedMs);
-        speakInUserLanguage(stripHtml(data.text));   // translate (if needed) + speak the reply aloud
+        speakInUserLanguage(stripHtml(data.text));
 
         if (data.mapUpdate) {
             try {
-                renderGeofenceState(data.mapUpdate, { speak: false });
+                // NEW: tag as 'chat' source so these hazards live in their own
+                // namespace and don't get pruned by an unrelated geofence check
+                if (!map) {
+                    pendingMapHits = data.mapUpdate; // note: drained as 'geofence' by toggleMap by default;
+                    // see below if you want chat-origin hazards preserved
+                    // through a later toggle — tag pendingMapHits's source too if so.
+                } else {
+                    renderGeofenceState(data.mapUpdate, { speak: false, source: 'chat' });
+                }
             } catch (mapErr) {
                 console.warn('Map update failed to render (answer above is still valid):', mapErr);
+            }
+        }
+
+        if (data.poiUpdate) {
+            if (!map) {
+                pendingPoiHits = data.poiUpdate;
+            } else {
+                try {
+                    drawPoisOnMap(data.poiUpdate);
+                } catch (poiErr) {
+                    console.warn('POI update failed to render:', poiErr);
+                }
             }
         }
     } catch (err) {
@@ -821,8 +891,6 @@ const AZURE_SPEECH_REGION = window.ORCA_CONFIG.AZURE_SPEECH_REGION;
 const AZURE_TRANSLATOR_KEY = window.ORCA_CONFIG.AZURE_TRANSLATOR_KEY;
 const AZURE_TRANSLATOR_REGION = window.ORCA_CONFIG.AZURE_TRANSLATOR_REGION;
 
-// Matches your SVAS 10-language set (English, Hindi, Tamil, Telugu, Malayalam,
-// Kannada, Bengali, Gujarati, Marathi, Odia). Extend/adjust voice names as needed.
 const LANGUAGE_MAP = {
     'en': { label: 'English',   recog: 'en-IN', voice: 'en-IN-NeerjaNeural',    translatorCode: 'en' },
     'hi': { label: 'हिन्दी',      recog: 'hi-IN', voice: 'hi-IN-SwaraNeural',     translatorCode: 'hi' },
@@ -844,8 +912,6 @@ const micBtn = document.getElementById('micBtn');
 const listeningHint = document.getElementById('listeningHint');
 const langSelect = document.getElementById('langSelect');
 
-// Populates the <select id="langSelect"> dropdown (see index.html snippet below)
-// and wires it to update + persist currentLanguage.
 function initLanguageDropdown(){
     if (!langSelect) {
         console.warn('langSelect element not found — add <select id="langSelect"></select> to index.html');
@@ -863,22 +929,18 @@ function initLanguageDropdown(){
 }
 initLanguageDropdown();
 
-// Domain-specific terms and place names to bias speech recognition toward —
-// extend this list as you discover more mishearings in the field.
 const ASR_PHRASE_LIST = [
-    // Fishing / marine domain
     'तट से नज़दीकी', 'संभावित मछली पकड़ने की जगह', 'मछली पकड़ने का क्षेत्र',
     'सुरक्षित मछली पकड़ने का क्षेत्र', 'समुद्री सीमा', 'चक्रवात', 'तूफान',
     'लहर की ऊंचाई', 'हवा की गति', 'ज्वार भाटा', 'तटरक्षक चेतावनी',
     'मछुआरा चेतावनी', 'बंदरगाह चेतावनी',
-    // Coastal states / cities likely to come up
     'उड़ीसा', 'ओडिशा', 'तमिलनाडु', 'केरल', 'आंध्र प्रदेश', 'गुजरात',
     'महाराष्ट्र', 'पश्चिम बंगाल', 'कर्नाटक', 'तूतीकोरिन', 'कोलकाता',
     'हल्दिया', 'सागर द्वीप', 'चेन्नई', 'कोच्चि', 'विशाखापत्तनम'
 ];
 
 function toggleListening(){
-    if (listening) return; // Azure's recognizeOnceAsync is single-shot; ignore repeat clicks mid-listen
+    if (listening) return;
 
     const lang = LANGUAGE_MAP[currentLanguage];
 
@@ -888,8 +950,6 @@ function toggleListening(){
     const audioConfig = SpeechSDK.AudioConfig.fromDefaultMicrophoneInput();
     const recognizer = new SpeechSDK.SpeechRecognizer(speechConfig, audioConfig);
 
-    // Bias recognition toward domain terms and place names. Hindi-specific for
-    // now — add per-language lists later if other languages need the same boost.
     if (currentLanguage === 'hi') {
         const phraseList = SpeechSDK.PhraseListGrammar.fromRecognizer(recognizer);
         ASR_PHRASE_LIST.forEach(phrase => phraseList.addPhrase(phrase));
@@ -945,15 +1005,11 @@ async function translateText(text, targetLangCode){
             'Content-Type': 'application/json'
         },
         body: JSON.stringify([{ text }])
-
     });
-    console.log(text)
     const data = await resp.json();
-    console.log(data[0].translations[0].text)
     return data[0].translations[0].text;
 }
 
-// Translates (if needed) English text into the current UI language, then speaks it.
 async function speakInUserLanguage(englishText){
     if (!englishText) return;
     const lang = LANGUAGE_MAP[currentLanguage];
@@ -966,7 +1022,6 @@ async function speakInUserLanguage(englishText){
     } catch (err) {
         console.error('Translation failed, falling back to English speech:', err);
     }
-    console.log(`[speakInUserLanguage] lang=${currentLanguage} | original="${englishText}" | translated="${translated}"`);
 
     const speechConfig = SpeechSDK.SpeechConfig.fromSubscription(AZURE_SPEECH_KEY, AZURE_SPEECH_REGION);
     speechConfig.speechSynthesisVoiceName = (currentLanguage === 'en')

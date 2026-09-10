@@ -96,7 +96,9 @@ public class Server {
            }
 
             JsonArray hazards = MapContext.drainHazardGeometry();
-            List<MapContext.InterestPoint> interest = MapContext.drain(); // legacy POI/vessel marker path
+            JsonArray pois = MapContext.drainPoi();
+            System.out.println("[handleChat] poiUpdate size=" + pois.size() + " -> " + pois);
+
 
             boolean anyHazardous = false;
             for (JsonElement el : hazards) {
@@ -114,6 +116,7 @@ public class Server {
             resp.addProperty("tag", anyHazardous ? "HAZARD ALERT" : null);
             resp.addProperty("warn", anyHazardous);
             resp.add("mapUpdate", hazards);
+            resp.add("poiUpdate", pois);
 
             writeJson(exchange, 200, resp);
         } catch (Exception e) {

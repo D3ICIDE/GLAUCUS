@@ -3,6 +3,8 @@ package tools;
 import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
 import utils.DatabaseManager;
+import utils.MapContext;
+
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -15,7 +17,6 @@ public class PoiToolWrapper {
         PORT,
         PFZ,
 
-        // add your actual database categories here
     }
 
     public record Poi(String poiType, String name, double lat, double lon, String metadata, double distanceKm, String lastUpdated) {}
@@ -50,10 +51,13 @@ public class PoiToolWrapper {
 
             try (ResultSet rs = ps.executeQuery()) {
                 if (rs.next()) {
-                    return new Poi(rs.getString("poi_type"), rs.getString("name"),
+                    Poi poi = new Poi(rs.getString("poi_type"), rs.getString("name"),
                             rs.getDouble("latitude"), rs.getDouble("longitude"),
                             rs.getString("metadata"), rs.getDouble("dist_km"),
                             rs.getString("last_updated"));
+                    MapContext.recordPoi(poi.poiType(), poi.name(), poi.lat(), poi.lon(),
+                            poi.metadata(), poi.distanceKm(), poi.lastUpdated());
+                    return poi;
                 }
             }
         }
@@ -89,10 +93,13 @@ public class PoiToolWrapper {
 
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
-                    results.add(new Poi(rs.getString("poi_type"), rs.getString("name"),
+                    Poi poi = new Poi(rs.getString("poi_type"), rs.getString("name"),
                             rs.getDouble("latitude"), rs.getDouble("longitude"),
                             rs.getString("metadata"), rs.getDouble("dist_km"),
-                            rs.getString("last_updated")));
+                            rs.getString("last_updated"));
+                    MapContext.recordPoi(poi.poiType(), poi.name(), poi.lat(), poi.lon(),
+                            poi.metadata(), poi.distanceKm(), poi.lastUpdated());
+                    results.add(poi);
                 }
             }
         }
@@ -117,9 +124,12 @@ public class PoiToolWrapper {
             ps.setString(1, "%" + nameQuery + "%");
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
-                    results.add(new Poi(rs.getString("poi_type"), rs.getString("name"),
+                    Poi poi = new Poi(rs.getString("poi_type"), rs.getString("name"),
                             rs.getDouble("latitude"), rs.getDouble("longitude"),
-                            rs.getString("metadata"), -1, rs.getString("last_updated")));
+                            rs.getString("metadata"), -1, rs.getString("last_updated"));
+                    MapContext.recordPoi(poi.poiType(), poi.name(), poi.lat(), poi.lon(),
+                            poi.metadata(), poi.distanceKm(), poi.lastUpdated());
+                    results.add(poi);
                 }
             }
         }

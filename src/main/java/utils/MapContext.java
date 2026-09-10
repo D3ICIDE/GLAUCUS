@@ -8,21 +8,38 @@ import java.util.List;
 import java.util.Set;
 
 public class MapContext {
-    public record InterestPoint(double lat, double lon, String kind, String reason) {}
+// ---------------- POI markers, recorded directly by PoiToolWrapper ----------------
 
-    private static final ThreadLocal<List<InterestPoint>> POINTS =
+    public record PoiEntry(String poiType, String name, double lat, double lon,
+                           String metadata, double distanceKm, String lastUpdated) {}
+
+    private static final ThreadLocal<List<PoiEntry>> POI_ENTRIES =
             ThreadLocal.withInitial(ArrayList::new);
 
-    public static void record(double lat, double lon, String kind, String reason) {
-        POINTS.get().add(new InterestPoint(lat, lon, kind, reason));
+    public static void recordPoi(String poiType, String name, double lat, double lon,
+                                 String metadata, double distanceKm, String lastUpdated) {
+        POI_ENTRIES.get().add(new PoiEntry(poiType, name, lat, lon, metadata, distanceKm, lastUpdated));
     }
 
-    public static List<InterestPoint> drain() {
-        List<InterestPoint> points = POINTS.get();
-        POINTS.remove(); // avoid leaking across requests on the same pooled thread
-        return points;
-    }
+    public static JsonArray drainPoi() {
+        List<PoiEntry> entries = POI_ENTRIES.get();
+        POI_ENTRIES.remove();
 
+        JsonArray out = new JsonArray();
+        Set<String> seen = new HashSet<>();
+        for (PoiEntry e : entries) {
+            JsonObject obj = new JsonObject();
+            obj.addProperty("poi_type", e.poiType());
+            obj.addProperty("name", e.name());
+            obj.addProperty("lat", e.lat());
+            obj.addProperty("lon", e.lon());
+            obj.addProperty("metadata", e.metadata());
+            obj.addProperty("distanceKm", e.distanceKm());
+            obj.addProperty("lastUpdated", e.lastUpdated());
+            if (seen.add(obj.toString())) out.add(obj);
+        }
+        return out;
+    }
     // ---------------- new: full hazard geometry, recorded directly by the tool that found it ----------------
 
     public record HazardGeometryEntry(String region,String issuedBy,String type,String source, String riskLevel, String geometryJson, String fetchedAt,JsonElement message,String issued_at) {}

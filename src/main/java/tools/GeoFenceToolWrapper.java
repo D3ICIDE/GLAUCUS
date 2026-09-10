@@ -199,8 +199,6 @@ public class GeoFenceToolWrapper {
         System.out.println("Check Nearest Hazard Called");
         List<HazardRow> rows = queryNearestHazards(lat, lon, limit);
 
-
-        MapContext.record(lat, lon, "hazard", "checkNearestHazards"); // keep: still useful as a query-point marker
         for (HazardRow r : rows) {
             MapContext.recordHazardGeometry(
                     r.region(), r.issued_by(), r.hazard_type(), r.source(),
