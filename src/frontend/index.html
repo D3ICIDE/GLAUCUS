@@ -31,6 +31,7 @@
             <div class="log" id="log"></div>
             <div class="listening-hint" id="listeningHint"></div>
             <div class="input-bar">
+                <select id="langSelect"></select>
                 <div class="input-wrap">
                     <input type="text" id="textInput" placeholder="Ask about weather, tides, or where to fish…" onkeydown="if(event.key==='Enter')sendMessage()">
                     <button class="icon-btn mic-btn" id="micBtn" onclick="toggleListening()" title="Speak">
@@ -71,7 +72,13 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/microsoft-cognitiveservices-speech-sdk@latest/distrib/browser/microsoft.cognitiveservices.speech.sdk.bundle-min.js"></script>
+<script src="https://aka.ms/csspeech/jsbrowserpackageraw"></script>
+<script src="config.js"></script>
+
 <script src="app.js"></script>
+
+
 
 </body>
 </html>

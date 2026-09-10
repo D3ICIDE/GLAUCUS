@@ -94,6 +94,7 @@ public class LocationToolWrapper {
             @P("This is the location that you are trying to find. This take a free form query so be as specific as possibile.") String location) {
         System.out.println("Using GeoEncoding");
         try {
+            System.out.println("Location: " + location);
             String query = URLEncoder.encode(location + " India", StandardCharsets.UTF_8);
             String url = String.format("https://nominatim.openstreetmap.org/search?q=%s&format=json", query);
 

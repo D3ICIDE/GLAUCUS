@@ -16,11 +16,13 @@ public class GeoFenceToolWrapper {
     private static final Gson gson = new GsonBuilder().setPrettyPrinting().create();
 
     // Full row, including geometry — used internally / for the frontend map, never sent to the LLM
-    private record HazardRow(String source, String riskLevel, JsonElement message, String fetchedAt,
+    private record HazardRow(String hazard_type,String region,String source, String riskLevel, JsonElement message,
+                             String fetchedAt,String issued_at,String issued_by,
                              double distanceMeters, String geometryJson) {
-        private HazardRow(String source, String riskLevel, String rawMessage, String fetchedAt,
+        private HazardRow(String hazard_type,String region,String source, String riskLevel, String rawMessage,
+                          String fetchedAt,String issued_at,String issued_by,
                           double distanceMeters, String geometryJson) {
-            this(source, riskLevel, parseJsonMessage(rawMessage), fetchedAt, distanceMeters, geometryJson);
+            this(hazard_type,region,source, riskLevel, parseJsonMessage(rawMessage), fetchedAt, issued_at, issued_by, distanceMeters, geometryJson);
         }
         private static JsonElement parseJsonMessage(String rawMessage) {
             if (rawMessage == null) return new JsonPrimitive("");
@@ -36,13 +38,13 @@ public class GeoFenceToolWrapper {
 
     private static List<HazardRow> queryHazards(double lat, double lon, double radiusMeters) throws Exception {
         String sql = """
-        SELECT source_name, risk_level, message, fetched_at,
+        SELECT hazard_type, risk_level, message, fetched_at,region,issued_by,source,issued_at,
                ST_AsGeoJSON(ST_SimplifyPreserveTopology(geom, 0.005)) AS geometry_json,
                ST_Distance(geom::geography, ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography) AS dist
         FROM hazard_unified
         WHERE ST_DWithin(geom::geography, ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography, ?)
           AND (
-              source_name != 'eez_boundary_proximity'
+              hazard_type != 'eez_boundary_proximity'
               OR NOT EXISTS (
                   SELECT 1 FROM landing_centers lc
                   WHERE ST_DWithin(lc.geom::geography, ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography, 50000)
@@ -66,8 +68,10 @@ public class GeoFenceToolWrapper {
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
                     rows.add(new HazardRow(
-                            rs.getString("source_name"), rs.getString("risk_level"),
+                            rs.getString("hazard_type"),rs.getString("region"),
+                            rs.getString("source"), rs.getString("risk_level"),
                             rs.getString("message"), rs.getString("fetched_at"),
+                            rs.getString("issued_at"),rs.getString("issued_by"),
                             rs.getDouble("dist"), rs.getString("geometry_json")
                     ));
                 }
@@ -78,12 +82,12 @@ public class GeoFenceToolWrapper {
 
     private static List<HazardRow> queryNearestHazards(double lat, double lon, int limit) throws Exception {
         String sql = """
-        SELECT source_name, risk_level, message, fetched_at,
+        SELECT hazard_type,region,source, risk_level, message, fetched_at,issued_by,issued_at,
                ST_AsGeoJSON(geom) AS geometry_json,
                ST_Distance(geom::geography, ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography) AS dist
         FROM hazard_unified
         WHERE (
-            source_name != 'eez_boundary_proximity'
+            hazard_type != 'eez_boundary_proximity'
             OR NOT EXISTS (
                 SELECT 1 FROM landing_centers lc
                 WHERE ST_DWithin(lc.geom::geography, ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography, 50000)
@@ -109,8 +113,10 @@ public class GeoFenceToolWrapper {
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
                     rows.add(new HazardRow(
-                            rs.getString("source_name"), rs.getString("risk_level"),
+                            rs.getString("hazard_type"),rs.getString("region"),
+                            rs.getString("source"), rs.getString("risk_level"),
                             rs.getString("message"), rs.getString("fetched_at"),
+                            rs.getString("issued_at"),rs.getString("issued_by"),
                             rs.getDouble("dist"), rs.getString("geometry_json")
                     ));
                 }
@@ -180,7 +186,7 @@ public class GeoFenceToolWrapper {
         return sb.toString().trim();
     }
 
-    // ---------------- LLM-facing tools: lean, no geometry ----------------
+    // ---------------- LLM-facing tools: ----------------
 
     @Tool("Fetch the N closest hazards to a location, with type, risk level, message, fetched_at timestamp, and distance in km. " +
             "Does not include map geometry — use for conversational answers only.")
@@ -190,11 +196,16 @@ public class GeoFenceToolWrapper {
             @P("Number of nearest hazards to return, e.g. 5. This limit should be set to 500 if all hazards are to be fetched.") int limit,
             @P("Boat width category in metres — must be 4, 6, or 7. Should be 'null' if size of the boat is not confirmed.") Integer boatWidth
     ) throws Exception {
+        System.out.println("Check Nearest Hazard Called");
         List<HazardRow> rows = queryNearestHazards(lat, lon, limit);
+
 
         MapContext.record(lat, lon, "hazard", "checkNearestHazards"); // keep: still useful as a query-point marker
         for (HazardRow r : rows) {
-            MapContext.recordHazardGeometry(r.source(), r.riskLevel(), r.geometryJson(), r.fetchedAt());
+            MapContext.recordHazardGeometry(
+                    r.region(), r.issued_by(), r.hazard_type(), r.source(),
+                    r.riskLevel(), r.geometryJson(), r.fetchedAt(), r.message(),r.issued_at
+            );
         }return gson.toJson(rows.stream().map(r -> toSummary(r, boatWidth)).toList());
     }
 
@@ -207,10 +218,10 @@ public class GeoFenceToolWrapper {
 
     public static void main(String[] args) throws Exception {
         System.out.println("LLM-facing (lean):");
-//        System.out.println(checkNearestHazards(9.9, 76, 10, null));
+        System.out.println(checkNearestHazards(9.9, 76, 10, null));
 
         System.out.println("\nFrontend-facing (with geometry):");
-        System.out.println(getHazardsWithGeometryForMap(15.0, 74.0, 70000));
-        System.out.println(getHazardsWithGeometryForMap(8.5, 80.0, 70000));
+//        System.out.println(getHazardsWithGeometryForMap(15.0, 74.0, 70000));
+//        System.out.println(getHazardsWithGeometryForMap(8.5, 80.0, 70000));
     }
 }

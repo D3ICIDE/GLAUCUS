@@ -208,6 +208,7 @@ public class OceanDataToolWrapper {
             @P("Latitude of the location") double lat,
             @P("Longitude of the location") double lon)
             throws Exception {
+        System.out.println("Tool Called FetchWindRaius" );
         return fetchWind(lat, lon, DEFAULT_RADIUS_METERS);
     }
 

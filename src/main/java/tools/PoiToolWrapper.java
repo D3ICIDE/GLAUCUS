@@ -31,6 +31,7 @@ public class PoiToolWrapper {
                                   @P("Optional. The specific category of POI to filter by (e.g., 'landing centres', 'port')." +
                                           " Pass null to retrieve all nearby POIs regardless of type.") PoiType poiType)
             throws Exception {
+        System.out.println("findNearestPoi called" + lat + lon+ poiType);
         String sql = "SELECT poi_type, name, latitude, longitude, metadata, last_updated, " +
                 DISTANCE_SQL + " AS dist_km " +
                 "FROM poi_unified " +
@@ -67,6 +68,7 @@ public class PoiToolWrapper {
             @P("The search radius in kilometers (e.g., 10.5)") double radiusKm,
             @P("Optional. The specific category of POI to filter by (e.g., 'landing center', 'port'). Pass null to retrieve all nearby POIs regardless of type.") PoiType poiType
     ) throws Exception {
+        System.out.println("Another PoI called, Query:" + lat+lon+radiusKm+poiType);
         String sql = "SELECT poi_type, name, latitude, longitude, metadata, last_updated, " +
                 DISTANCE_SQL + " AS dist_km " +
                 "FROM poi_unified " +
@@ -102,6 +104,8 @@ public class PoiToolWrapper {
     @Tool("This tool is used to search for Point Of Interest by their name. For example, by the name of the port or the name of the landing station")
     public static List<Poi> findByName(
             @P("This parameter takes the name of the Point Of Interest")String nameQuery) throws Exception {
+        System.out.println("PoI Tool called");
+        System.out.println(nameQuery);
         String sql = """
                 SELECT poi_type, name, latitude, longitude, metadata, last_updated
                 FROM poi_unified WHERE name ILIKE ? LIMIT 10

@@ -22,16 +22,19 @@ public class Config {
     //CHANGES
     static Dotenv dotenv = Dotenv.load();
     public static String mistralApi= dotenv.get("mistral_api");
+    public static String tRouterApi= dotenv.get("token_router_api");
     private static volatile String currentUserMessage;
     public static final String mainModel = "openai/gpt-oss-120b";
     public static final String routingModel = "openai/gpt-oss-20b";
-    public static final String analysisModel = "llama-3.3-70b-versatile";
+
+    public static final String analysisModel = "z-ai/glm-5.3-free";
     public static final String backgroundCheckingModel= "openai/gpt-oss-20b";
     public static final String visualModel ="";
     //public static final double temperature =0.5;
     public final static String Nvidia_API_KEY = System.getenv("NVIDIA_API_KEY");
     public static final String nVIDIAModel = "nvidia/nemotron-3-ultra-550b-a55b:free";
     public static final String exaUrl = "https://api.exa.ai/search";
+    public static final String tokenRouterBaseURL = "https://api.tokenrouter.com/v1";
     public static final String ExaApiKey = System.getenv("exa_API");
 
 

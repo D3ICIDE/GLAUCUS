@@ -22,9 +22,12 @@ public class SseSessionBroker {
         OutputStream out = streams.get(sessionId);
         if (out == null) return;
         try {
-            String json = gson.toJson(event);          // <-- properly escapes \n, \", \\, etc.
-            out.write(("data: " + json + "\n\n").getBytes(StandardCharsets.UTF_8));
-            out.flush();
+            String json = gson.toJson(event);
+            byte[] frame = ("data: " + json + "\n\n").getBytes(StandardCharsets.UTF_8);
+            synchronized (out) {
+                out.write(frame);
+                out.flush();
+            }
         } catch (IOException e) {
             streams.remove(sessionId);
         }

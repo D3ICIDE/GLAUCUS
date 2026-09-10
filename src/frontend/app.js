@@ -3,8 +3,7 @@ const API_BASE = 'http://localhost:8080'; // LocalDevServer — swap once a real
 const sessionId = crypto.randomUUID();
 
 // ---------------- POSITION STATE ----------------
-// Falls back to a fixed coord until geolocation resolves, or until the
-// dev "click map to simulate" handler overrides it.
+
 let currentLat = 9.9, currentLon = 78.5;
 
 if (navigator.geolocation) {
@@ -21,10 +20,6 @@ if (navigator.geolocation) {
 }
 
 function updateCoordsReadout(){
-    // coordsReadout (and the connDot inside it) are currently commented out in
-    // index.html. Without this guard, callers of this function — including the
-    // map click handler — throw here and silently abort everything after this
-    // line (marker drawing, the geofence check itself never fires).
     if (!coordsReadout) return;
     const dot = document.getElementById('connDot');
     coordsReadout.innerHTML = `<span class="conn-dot ${dot && dot.classList.contains('online') ? 'online' : ''}" id="connDot"></span>${currentLat.toFixed(2)}°N · ${currentLon.toFixed(2)}°E`;
@@ -35,44 +30,23 @@ let map = null;
 let mapInitialized = false;
 let geofencePollHandle = null;
 
-// Query-point search-radius indicator (dashed circle) — kept as a lightweight visual
-// for "this is the area being checked", separate from the actual hazard shapes below.
+
 let searchRadiusLayer = null;
 
-// Actual hazard geometry drawn on the map, keyed by a stable identity per hit so we
-// don't re-parse/re-render unchanged geometry on every 5s poll (this matters a lot
-// once ST_Simplify tolerance still leaves e.g. the EEZ line at a few hundred points,
-// fetched repeatedly). Key -> Leaflet layer.
+
 let drawnHazardLayers = new Map();
 
 let lastHazardState = null;   // for enter/exit edge detection (no repeat auto-popups while lingering)
 let lastHazardousHits = [];   // raw hazardous hits from the most recent check, so the
 // badge click can redisplay them (with updated distances) on demand
 
-// Hazards received while Chart View was closed (map == null). Replayed onto the
-// map the moment it's opened, instead of forcing initMap() to run early — forcing
-// it open against a display:none container can leave Leaflet with a broken tile
-// grid, which just trades this bug for a worse one.
-let pendingMapHits = null;
 
 function initMap(){
     if(mapInitialized) return;
 
-    // doubleClickZoom disabled: a double-click on the map otherwise fires two
-    // 'click' events (plus a dblclick) at the same coordinates, which previously
-    // meant two identical geofence checks fired back-to-back for every double-click.
-    // renderer: L.svg() forces the vector SVG layer to exist immediately (instead
-    // of being created lazily on first shape) so hazard glow gradients can be
-    // injected into it right away, before any hazard has been drawn.
     map = L.map('map', { zoomControl:true, doubleClickZoom:false, renderer: L.svg() }).setView([currentLat, currentLon], 7);
 
-    // Esri World Dark Gray Canvas — dark, minimal basemap matching the GLAUCUS
-    // dark UI, free and keyless. (CartoDB Dark Matter, used previously, started
-    // requiring an API key and serves watermarked "API KEY REQUIRED" tiles
-    // without one — that's the grid of tiled text seen in testing, not a bug
-    // in this code.) Base layer is the dark ground/water fill; the Reference
-    // layer on top adds crisp labels and borders, which Esri ships as a
-    // separate tile set for this basemap so labels stay sharp at all zooms.
+
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
         attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ',
         maxZoom: 16
@@ -92,28 +66,17 @@ function initMap(){
         L.circleMarker([currentLat, currentLon], {
             radius: 5, color:'#F5EFE2', fillColor:'#F5EFE2', fillOpacity:1, weight:1
         }).addTo(map);
-        // immediate: true — a user click should feel responsive, not wait out the debounce.
-        // Overlapping/duplicate requests are still guarded against inside checkGeofence itself.
         requestGeofenceCheck(currentLat, currentLon, { immediate: true });
     });
 
     loadNearbyPfz();
     requestGeofenceCheck(currentLat, currentLon, { immediate: true });
 
-    // NOTE: auto-polling (setInterval-based continuous geofence checking) has been
-    // removed for now. Checks now only fire on explicit triggers: map open (above),
-    // map click (below), and the hazard badge click. Re-enable by restoring
-    // the setInterval call here if/when continuous GPS-tracking simulation is needed again.
     geofencePollHandle = null;
 
     mapInitialized = true;
 }
 
-// Injects two radial-gradient defs (hazardous / informational) into the map's
-// SVG root, once. drawHazardsOnMap() references these by id as fillColor
-// ('url(#hazardGlowHazard)' etc.) — SVG's fill attribute accepts a paint-server
-// reference directly, and Leaflet just writes whatever string you give it into
-// that attribute, so this works without any Leaflet-specific gradient support.
 function ensureHazardGradients(map){
     const renderer = map.getRenderer(map);
     const svg = renderer && renderer._container;
@@ -159,8 +122,6 @@ function toggleMap(){
             initMap();
             map && map.invalidateSize();
 
-            // Draw whatever hazard state arrived from chat while the panel was
-            // closed. Only the most recent set is kept, so this is always current.
             if (pendingMapHits) {
                 drawHazardsOnMap(pendingMapHits);
                 pendingMapHits = null;
@@ -228,7 +189,7 @@ async function checkGeofence(lat, lon){
 
     try {
         const resp = await fetch(
-            `${API_BASE}/api/v1/geofence/check?lat=${lat}&lon=${lon}`,
+            `${API_BASE}/api/v1/geofence?lat=${lat}&lon=${lon}`,
             { signal: geofenceAbortController.signal }
         );
         if (!resp.ok) throw new Error(`status ${resp.status}`);
@@ -265,14 +226,17 @@ function formatHazardMessage(message){
     return String(message);
 }
 
+// Strips HTML tags so text can be safely sent to the Translator API or read
+// aloud by TTS without literal tag text ("less than b greater than") leaking in.
+function stripHtml(html){
+    if (html == null) return '';
+    return String(html).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
 function hazardKey(hit){
     return `${hit.source}::${hit.fetchedAt}`;
 }
 
-// Two backend shapes are in play: /api/v1/chat's mapUpdate sends the leaner
-// post-Bug#1 shape (hit.geometry, already-parsed object; no distanceMeters or
-// message), while /api/v1/geofence/check still sends the older shape
-// (hit.geometryJson as a string, plus distanceMeters/message). Handle both.
 function getHazardGeometry(hit){
     if (hit.geometry) return hit.geometry;
     if (hit.geometryJson) {
@@ -300,10 +264,123 @@ function popupHtmlFor(hit){
     return `<b>${hit.source}</b> [${hit.riskLevel}]${dist ? ` — ${dist}` : ''}${msg}`;
 }
 
-// ---------------- SYSTEM ALERT (full-screen emergency popup) ----------------
+// ---------------- SYSTEM ALERT ----------------
+
 let systemAlertEscHandler = null;
 
-function showSystemAlert(hazardousHits){
+function formatDateShort(s){
+    if (!s) return '—';
+    const m = s.match(/(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})/);
+    return m ? `${m[1]} ${m[2]}` : s;
+}
+
+const hazardTypeMeta = {
+    'PORT WARNING':           { icon: '⚓', label: 'Port Warning',      accent: '#ffaa00', bright: '#ffc866', dim: '#ffddaa' },
+    'FISHERMEN WARNING':      { icon: '🎣', label: 'Fishermen Warning', accent: '#ff6600', bright: '#ff9955', dim: '#ffcc99' },
+    'HIGH_WAVE_OR_WIND':      { icon: '🌊', label: 'High Wave / Wind',  accent: '#ff3333', bright: '#ff7777', dim: '#ffaaaa' },
+    'LOW_VISIBILITY':         { icon: '🌫️', label: 'Low Visibility',    accent: '#cc66ff', bright: '#dd99ff', dim: '#eeccff' },
+    'SVA ADVISORY':           { icon: '⛵', label: 'SVA Advisory',      accent: '#29c1ff', bright: '#7fe0ff', dim: '#a8e6ff' },
+    'eez_boundary_proximity': { icon: '🌐', label: 'EEZ Boundary',      accent: '#7FA6A8', bright: '#a8c5c6', dim: '#c7dcdd' },
+};
+
+function entryHtmlFor(h, idx) {
+    const entryId = `hazard-entry-${idx}`;
+    const dist = formatDistanceKm(h);
+    const meta = hazardTypeMeta[h.hazard_type];
+    const style = meta
+        ? ` style="--sa-accent:${meta.accent};--sa-accent-bright:${meta.bright};--sa-accent-text-dim:${meta.dim}"`
+        : '';
+    const typeLabel = meta ? meta.label : (h.hazard_type || 'UNKNOWN');
+    const icon = meta ? meta.icon : '⚠';
+
+    const isInside = h.distanceMeters === 0 || h.distanceMeters === 0.0;
+    const distHtml = isInside
+        ? `<span class="sa-entry-dist-inline sa-entry-dist-critical">INSIDE HAZARD AREA — LEAVE ASAP</span>`
+        : (dist ? `<span class="sa-entry-dist-inline">${dist.toUpperCase()}</span>` : '');
+
+    const msgHtml = h.hazard_type === 'SVA ADVISORY'
+        ? renderSvaDayTabs(h.message, entryId)
+        : `<div class="sa-entry-msg">${formatHazardMessage(h.message)}</div>`;
+
+    return `
+        <div class="sa-entry" id="${entryId}"${style}>
+            <div class="sa-entry-type-row">
+                <span class="sa-entry-type">${icon} ${typeLabel}</span>
+                ${distHtml}
+            </div>
+            <div class="sa-entry-issued-by">
+                <span class="sa-label">ISSUED BY</span>
+                <span class="sa-value">${h.issued_by || '—'}</span>
+            </div>
+            <div class="sa-entry-meta">
+                <span>Issued ${formatDateShort(h.issued_at)}</span>
+                <span class="sa-entry-meta-sep">·</span>
+                <span>Fetched ${formatDateShort(h.fetchedAt)}</span>
+            </div>
+            <div class="sa-entry-badge">RISK: ${(h.riskLevel || 'UNKNOWN').toUpperCase()}</div>
+            ${msgHtml}
+            <div class="sa-entry-footer">
+                <a class="sa-entry-source" href="${h.source}" target="_blank" rel="noopener">${h.source}</a>
+            </div>
+        </div>
+    `;
+}
+function formatSvaDate(dateStr) {
+    if (!dateStr) return null;
+    const d = new Date(dateStr + 'T00:00:00');
+    if (isNaN(d)) return dateStr;
+    return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+}
+
+function renderSvaDayTabs(message, entryId) {
+    if (!Array.isArray(message) || message.length === 0) {
+        return `<div class="sa-entry-msg">${formatHazardMessage(message)}</div>`;
+    }
+
+    const tabsHtml = message.map((dayObj, idx) => {
+        const dayLabel = formatSvaDate(dayObj.forecast_date) || `Day ${idx + 1}`;
+        return `<button class="sva-day-tab${idx === 0 ? ' active' : ''}"
+                    onclick="selectSvaDay('${entryId}', ${idx})"
+                    data-day-idx="${idx}">${dayLabel}</button>`;
+    }).join('');
+
+    const panelsHtml = message.map((dayObj, idx) => {
+        const advisories = Array.isArray(dayObj.advisories) ? dayObj.advisories : [];
+        const linesHtml = advisories.map(a => {
+            const width = a.boat_width ? ` <span class="sva-boat-width">(boats &lt;${a.boat_width}m)</span>` : '';
+            const statusClass = a.status === 'safe' ? 'sva-status-safe' : 'sva-status-alert';
+            return `<div class="sva-advisory-line ${statusClass}">${a.text || ''}${width}</div>`;
+        }).join('') || '<div class="sva-advisory-line">No advisories for this day.</div>';
+        return `<div class="sva-day-panel${idx === 0 ? ' active' : ''}" data-day-idx="${idx}">${linesHtml}</div>`;
+    }).join('');
+
+    return `<div class="sva-day-tabs">${tabsHtml}</div><div class="sva-day-panels">${panelsHtml}</div>`;
+}
+
+function selectSvaDay(entryId, dayIdx) {
+    const entry = document.getElementById(entryId);
+    if (!entry) return;
+    entry.querySelectorAll('.sva-day-tab').forEach(el =>
+        el.classList.toggle('active', el.dataset.dayIdx == dayIdx));
+    entry.querySelectorAll('.sva-day-panel').forEach(el =>
+        el.classList.toggle('active', el.dataset.dayIdx == dayIdx));
+}
+
+// Builds one plain-text-ish string from a hazardous-hits array, suitable for
+// translation + TTS (kept separate from the HTML rendering used in the overlay).
+function hazardousHitsToSpeechText(hazardousHits){
+    return hazardousHits.map(h => {
+        const meta = hazardTypeMeta[h.hazard_type];
+        const label = meta ? meta.label : (h.hazard_type || 'Hazard');
+        const dist = formatDistanceKm(h);
+        const isInside = h.distanceMeters === 0 || h.distanceMeters === 0.0;
+        const distPart = isInside ? 'You are inside the hazard area, leave immediately.' : (dist ? `${dist} away.` : '');
+        const msg = stripHtml(formatHazardMessage(h.message));
+        return `${label}. ${distPart} ${msg}`;
+    }).join(' ');
+}
+
+function showSystemAlert(hazardousHits, { speak = true } = {}){
     const overlay = document.getElementById('systemAlertOverlay');
     const subtitle = document.getElementById('systemAlertSubtitle');
     const body = document.getElementById('systemAlertBody');
@@ -313,6 +390,7 @@ function showSystemAlert(hazardousHits){
             .map(h => `<b>${h.source}</b> (${h.riskLevel}${formatDistanceKm(h) ? `, ${formatDistanceKm(h)}` : ''}): ${formatHazardMessage(h.message)}`)
             .join('<br>');
         addBotMessage(summary, 'HAZARD ALERT', true);
+        speakInUserLanguage(stripHtml(summary));
         return;
     }
 
@@ -320,24 +398,20 @@ function showSystemAlert(hazardousHits){
         ? `${hazardousHits.length} HAZARDS DETECTED IN RANGE`
         : 'HAZARD DETECTED IN RANGE';
 
-    body.innerHTML = hazardousHits.map(h => {
-        const dist = formatDistanceKm(h);
-        return `
-        <div class="sa-entry">
-            <div class="sa-entry-row">
-                <span class="sa-entry-source">${h.source}</span>
-                ${dist ? `<span class="sa-entry-dist">${dist.toUpperCase()}</span>` : ''}
-            </div>
-            <div class="sa-entry-risk">RISK: ${(h.riskLevel || 'UNKNOWN').toUpperCase()}</div>
-            <div class="sa-entry-msg">${formatHazardMessage(h.message)}</div>
-        </div>
-    `;
-    }).join('');
+    body.innerHTML = hazardousHits.map((h, idx) => entryHtmlFor(h, idx)).join('');
 
     overlay.classList.remove('sa-clear');
     setSystemAlertChrome('⚠', 'SYSTEM WARNING');
     playSystemAlertEntrance(overlay);
     showHazardBadge();
+
+    // Speak the hazard summary aloud in the fisherman's chosen language —
+    // safety alerts are the single most important thing to get spoken correctly.
+    if (speak) {
+        speakInUserLanguage(hazardousHitsToSpeechText(hazardousHits));
+    }
+
+
 }
 
 function showClearAlert(){
@@ -390,9 +464,7 @@ function dismissSystemAlert(){
 }
 
 // ---------------- persistent "hazards active" status chip ----------------
-// Visibility is driven entirely by renderGeofenceState() below, based on
-// whether a hazard is actually in range — the badge click handler further
-// down never touches this directly.
+
 function showHazardBadge(){
     const badge = document.getElementById('hazardBadge');
     if (badge) badge.classList.add('active');
@@ -402,24 +474,16 @@ function hideHazardBadge(){
     if (badge) badge.classList.remove('active');
 }
 
-// Badge click handler. Fires a real fetch so distances/geometry are current,
-// then re-opens the popup. Doesn't manage badge visibility itself:
-// renderGeofenceState() (invoked inside checkGeofence) already shows/hides
-// the badge purely based on whether the vessel is still in a hazard zone.
 async function onHazardBadgeClick(){
     await checkGeofence(currentLat, currentLon);
 
     if (lastHazardousHits.length) {
         showSystemAlert(lastHazardousHits); // updated distances baked in
     }
-    // If no longer hazardous, renderGeofenceState has already hidden the
-    // badge as part of the check above — nothing to pop up.
+
 }
 
-// Handles hazard state that isn't tied to Leaflet: alerts, the persistent
-// badge, and (via showSystemAlert's fallback) chat. Always runs, regardless
-// of whether Chart View has ever been opened.
-function renderGeofenceState(hits){
+function renderGeofenceState(hits, { speak = true } = {}){
     hits = hits || [];
 
     const hazardousHits = hits.filter(isHazardous);
@@ -431,17 +495,13 @@ function renderGeofenceState(hits){
 
     if (currentState !== lastHazardState) {
         if (currentState) {
-            showSystemAlert(hazardousHits);
+            showSystemAlert(hazardousHits, { speak });
         } else if (lastHazardState) {
             dismissSystemAlert();
             showClearAlert();
         }
         lastHazardState = currentState;
     }
-
-    // Actual Leaflet drawing needs a real, initialized map. If Chart View
-    // hasn't been opened yet, stash the hits and draw them the moment it is,
-    // instead of forcing initMap() to run against a hidden container.
     if (!map) {
         pendingMapHits = hits;
         return;
@@ -449,8 +509,7 @@ function renderGeofenceState(hits){
     drawHazardsOnMap(hits);
 }
 
-// Pure Leaflet drawing — only ever called once `map` is known to exist
-// (either live, from renderGeofenceState, or replayed from toggleMap).
+
 function drawHazardsOnMap(hits){
     // ---- search-radius indicator around the query point (context only) ----
     const anyHazard = hits.some(isHazardous);
@@ -620,9 +679,13 @@ function startAgentStream(loadingEl, startTime){
     if (agentEventSource) agentEventSource.close();
     currentTrace = [];
 
-    agentEventSource = new EventSource(`${API_BASE}/events?sessionId=${sessionId}`);
+    agentEventSource = new EventSource(`${API_BASE}/api/v1/events?sessionId=${sessionId}`);
     const textEl = loadingEl.querySelector('.loading-text');
     const timerEl = loadingEl.querySelector('.loading-timer');
+    const bubbleEl = loadingEl.querySelector('.bot-bubble');
+
+    let answerStarted = false;
+    let streamedText = '';
 
     const timerHandle = setInterval(() => {
         timerEl.textContent = formatElapsed(performance.now() - startTime);
@@ -638,9 +701,21 @@ function startAgentStream(loadingEl, startTime){
             currentTrace.push(evt);
         }
 
-        if (evt.type === 'agent_start') textEl.textContent = `⏳ ${evt.agent} working…`;
-        if (evt.type === 'agent_end')   textEl.textContent = `✅ ${evt.agent} done — continuing…`;
-        if (evt.type === 'agent_error') textEl.textContent = `⚠ ${evt.agent} hit an error…`;
+        if (evt.type === 'token') {
+            if (!answerStarted) {
+                answerStarted = true;
+                bubbleEl.classList.add('answer-streaming'); // drop the "thinking" pulse look, keep the timer running
+                textEl.textContent = '';
+            }
+            streamedText += evt.text;
+            textEl.textContent = streamedText;
+        } else if (!answerStarted) {
+            // pre-answer phase only — once tokens arrive, agent status stops
+            // fighting with the answer text for the same element
+            if (evt.type === 'agent_start') textEl.textContent = `⏳ ${evt.agent} working…`;
+            if (evt.type === 'agent_end')   textEl.textContent = `✅ ${evt.agent} done — continuing…`;
+            if (evt.type === 'agent_error') textEl.textContent = `⚠ ${evt.agent} hit an error…`;
+        }
 
         if (evt.type === 'done') {
             agentEventSource.close();
@@ -690,10 +765,11 @@ async function sendMessage(){
 
         loadingEl.remove();
         addBotMessage(data.text, data.tag, data.warn, currentTrace, elapsedMs);
+        speakInUserLanguage(stripHtml(data.text));   // translate (if needed) + speak the reply aloud
 
         if (data.mapUpdate) {
             try {
-                renderGeofenceState(data.mapUpdate);
+                renderGeofenceState(data.mapUpdate, { speak: false });
             } catch (mapErr) {
                 console.warn('Map update failed to render (answer above is still valid):', mapErr);
             }
@@ -739,51 +815,170 @@ function generateResponse(userText){
 addBotMessage("Welcome aboard. Ask me about sea safety, tides, weather, or where to fish along the coast — in text or by voice.", null, false);
 updateCoordsReadout();
 
-// ---------------- VOICE INPUT ----------------
-let recognition = null;
+// ---------------- VOICE I/O (Azure Speech Translation + Translator + TTS) ----------------
+const AZURE_SPEECH_KEY = window.ORCA_CONFIG.AZURE_SPEECH_KEY;
+const AZURE_SPEECH_REGION = window.ORCA_CONFIG.AZURE_SPEECH_REGION;
+const AZURE_TRANSLATOR_KEY = window.ORCA_CONFIG.AZURE_TRANSLATOR_KEY;
+const AZURE_TRANSLATOR_REGION = window.ORCA_CONFIG.AZURE_TRANSLATOR_REGION;
+
+// Matches your SVAS 10-language set (English, Hindi, Tamil, Telugu, Malayalam,
+// Kannada, Bengali, Gujarati, Marathi, Odia). Extend/adjust voice names as needed.
+const LANGUAGE_MAP = {
+    'en': { label: 'English',   recog: 'en-IN', voice: 'en-IN-NeerjaNeural',    translatorCode: 'en' },
+    'hi': { label: 'हिन्दी',      recog: 'hi-IN', voice: 'hi-IN-SwaraNeural',     translatorCode: 'hi' },
+    'ta': { label: 'தமிழ்',      recog: 'ta-IN', voice: 'ta-IN-PallaviNeural',   translatorCode: 'ta' },
+    'te': { label: 'తెలుగు',     recog: 'te-IN', voice: 'te-IN-ShrutiNeural',    translatorCode: 'te' },
+    'ml': { label: 'മലയാളം',    recog: 'ml-IN', voice: 'ml-IN-SobhanaNeural',   translatorCode: 'ml' },
+    'kn': { label: 'ಕನ್ನಡ',      recog: 'kn-IN', voice: 'kn-IN-SapnaNeural',     translatorCode: 'kn' },
+    'bn': { label: 'বাংলা',      recog: 'bn-IN', voice: 'bn-IN-TanishaaNeural',  translatorCode: 'bn' },
+    'gu': { label: 'ગુજરાતી',    recog: 'gu-IN', voice: 'gu-IN-DhwaniNeural',    translatorCode: 'gu' },
+    'mr': { label: 'मराठी',      recog: 'mr-IN', voice: 'mr-IN-AarohiNeural',    translatorCode: 'mr' },
+    'or': { label: 'ଓଡ଼ିଆ',      recog: 'or-IN', voice: 'or-IN-SubhasiniNeural', translatorCode: 'or' },
+};
+
+const LANGUAGE_STORAGE_KEY = 'orca_language';
+let currentLanguage = localStorage.getItem(LANGUAGE_STORAGE_KEY) || 'en';
+
 let listening = false;
 const micBtn = document.getElementById('micBtn');
 const listeningHint = document.getElementById('listeningHint');
+const langSelect = document.getElementById('langSelect');
 
-const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-if(SpeechRecognition){
-    recognition = new SpeechRecognition();
-    recognition.continuous = false;
-    recognition.interimResults = false;
-    recognition.lang = 'en-IN';
-
-    recognition.onresult = (event) => {
-        const transcript = event.results[0][0].transcript;
-        document.getElementById('textInput').value = transcript;
-        sendMessage();
-    };
-    recognition.onend = () => {
-        listening = false;
-        micBtn.classList.remove('listening');
-        listeningHint.textContent = '';
-    };
-    recognition.onerror = () => {
-        listening = false;
-        micBtn.classList.remove('listening');
-        listeningHint.textContent = 'Could not hear that — try again';
-        setTimeout(() => listeningHint.textContent = '', 2000);
-    };
-}
-
-function toggleListening(){
-    if(!recognition){
-        listeningHint.textContent = 'Voice input not supported in this browser';
-        setTimeout(() => listeningHint.textContent = '', 2500);
+// Populates the <select id="langSelect"> dropdown (see index.html snippet below)
+// and wires it to update + persist currentLanguage.
+function initLanguageDropdown(){
+    if (!langSelect) {
+        console.warn('langSelect element not found — add <select id="langSelect"></select> to index.html');
         return;
     }
-    if(listening){
-        recognition.stop();
-    } else {
-        listening = true;
-        micBtn.classList.add('listening');
-        listeningHint.textContent = 'Listening…';
-        recognition.start();
+    langSelect.innerHTML = Object.entries(LANGUAGE_MAP)
+        .map(([code, lang]) => `<option value="${code}">${lang.label}</option>`)
+        .join('');
+    langSelect.value = currentLanguage;
+
+    langSelect.addEventListener('change', () => {
+        currentLanguage = langSelect.value;
+        localStorage.setItem(LANGUAGE_STORAGE_KEY, currentLanguage);
+    });
+}
+initLanguageDropdown();
+
+// Domain-specific terms and place names to bias speech recognition toward —
+// extend this list as you discover more mishearings in the field.
+const ASR_PHRASE_LIST = [
+    // Fishing / marine domain
+    'तट से नज़दीकी', 'संभावित मछली पकड़ने की जगह', 'मछली पकड़ने का क्षेत्र',
+    'सुरक्षित मछली पकड़ने का क्षेत्र', 'समुद्री सीमा', 'चक्रवात', 'तूफान',
+    'लहर की ऊंचाई', 'हवा की गति', 'ज्वार भाटा', 'तटरक्षक चेतावनी',
+    'मछुआरा चेतावनी', 'बंदरगाह चेतावनी',
+    // Coastal states / cities likely to come up
+    'उड़ीसा', 'ओडिशा', 'तमिलनाडु', 'केरल', 'आंध्र प्रदेश', 'गुजरात',
+    'महाराष्ट्र', 'पश्चिम बंगाल', 'कर्नाटक', 'तूतीकोरिन', 'कोलकाता',
+    'हल्दिया', 'सागर द्वीप', 'चेन्नई', 'कोच्चि', 'विशाखापत्तनम'
+];
+
+function toggleListening(){
+    if (listening) return; // Azure's recognizeOnceAsync is single-shot; ignore repeat clicks mid-listen
+
+    const lang = LANGUAGE_MAP[currentLanguage];
+
+    const speechConfig = SpeechSDK.SpeechConfig.fromSubscription(AZURE_SPEECH_KEY, AZURE_SPEECH_REGION);
+    speechConfig.speechRecognitionLanguage = lang.recog;
+
+    const audioConfig = SpeechSDK.AudioConfig.fromDefaultMicrophoneInput();
+    const recognizer = new SpeechSDK.SpeechRecognizer(speechConfig, audioConfig);
+
+    // Bias recognition toward domain terms and place names. Hindi-specific for
+    // now — add per-language lists later if other languages need the same boost.
+    if (currentLanguage === 'hi') {
+        const phraseList = SpeechSDK.PhraseListGrammar.fromRecognizer(recognizer);
+        ASR_PHRASE_LIST.forEach(phrase => phraseList.addPhrase(phrase));
     }
+
+    listening = true;
+    micBtn.classList.add('listening');
+    listeningHint.textContent = 'Listening…';
+
+    recognizer.recognizeOnceAsync(
+        async (result) => {
+            listening = false;
+            micBtn.classList.remove('listening');
+            listeningHint.textContent = '';
+            recognizer.close();
+
+            if (result.reason === SpeechSDK.ResultReason.RecognizedSpeech) {
+                const originalText = result.text;
+                let englishText = originalText;
+                try {
+                    englishText = (currentLanguage === 'en')
+                        ? originalText
+                        : await translateText(originalText, 'en');
+                } catch (err) {
+                    console.error('Input translation failed, sending original text:', err);
+                }
+                console.log(`[toggleListening] lang=${currentLanguage} | original="${originalText}" | translatedToEnglish="${englishText}"`);
+                document.getElementById('textInput').value = englishText;
+                sendMessage();
+            } else {
+                listeningHint.textContent = 'Could not hear that — try again';
+                setTimeout(() => listeningHint.textContent = '', 2000);
+            }
+        },
+        (err) => {
+            listening = false;
+            micBtn.classList.remove('listening');
+            listeningHint.textContent = 'Could not hear that — try again';
+            setTimeout(() => listeningHint.textContent = '', 2000);
+            console.error(err);
+            recognizer.close();
+        }
+    );
+}
+
+async function translateText(text, targetLangCode){
+    const endpoint = "https://api.cognitive.microsofttranslator.com";
+    const resp = await fetch(`${endpoint}/translate?api-version=3.0&to=${targetLangCode}`, {
+        method: 'POST',
+        headers: {
+            'Ocp-Apim-Subscription-Key': AZURE_TRANSLATOR_KEY,
+            'Ocp-Apim-Subscription-Region': AZURE_TRANSLATOR_REGION,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify([{ text }])
+
+    });
+    console.log(text)
+    const data = await resp.json();
+    console.log(data[0].translations[0].text)
+    return data[0].translations[0].text;
+}
+
+// Translates (if needed) English text into the current UI language, then speaks it.
+async function speakInUserLanguage(englishText){
+    if (!englishText) return;
+    const lang = LANGUAGE_MAP[currentLanguage];
+
+    let translated = englishText;
+    try {
+        translated = (currentLanguage === 'en')
+            ? englishText
+            : await translateText(englishText, lang.translatorCode);
+    } catch (err) {
+        console.error('Translation failed, falling back to English speech:', err);
+    }
+    console.log(`[speakInUserLanguage] lang=${currentLanguage} | original="${englishText}" | translated="${translated}"`);
+
+    const speechConfig = SpeechSDK.SpeechConfig.fromSubscription(AZURE_SPEECH_KEY, AZURE_SPEECH_REGION);
+    speechConfig.speechSynthesisVoiceName = (currentLanguage === 'en')
+        ? LANGUAGE_MAP.en.voice
+        : lang.voice;
+
+    const synthesizer = new SpeechSDK.SpeechSynthesizer(speechConfig);
+    synthesizer.speakTextAsync(
+        translated,
+        () => synthesizer.close(),
+        (err) => { console.error(err); synthesizer.close(); }
+    );
 }
 
 function formatElapsed(ms){

@@ -13,6 +13,7 @@ public class HazardAlertToolWrapper {
             @P("latitude of the area") double lat,
             @P("longitude of the area") double lon,
             @P("Search radius in kilometers around the location, e.g.50km")int radiusKm){
+        System.out.println("FetchAlertForThisLocation Called");
         List<Alert> alerts = GeneralAlertFetcher.fetchAlertForThisLocation(lat,lon,radiusKm);
         if (alerts == null || alerts.isEmpty()) {
             return "No active alerts found for this location.";

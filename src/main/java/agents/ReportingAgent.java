@@ -2,10 +2,7 @@ package agents;
 
 
 import dev.langchain4j.agentic.Agent;
-import dev.langchain4j.service.MemoryId;
-import dev.langchain4j.service.SystemMessage;
-import dev.langchain4j.service.UserMessage;
-import dev.langchain4j.service.V;
+import dev.langchain4j.service.*;
 
 public interface ReportingAgent {
 
@@ -107,5 +104,5 @@ you've ever seen from them.
         
         System trace: {{supervisorResult}}
         """)
-    String generateReport(@MemoryId String memoryId, @V("request") String request, @V("supervisorResult") String trace);
+    TokenStream generateReport(@MemoryId String memoryId, @V("request") String request, @V("supervisorResult") String trace);
 }
