@@ -784,3 +784,140 @@ header {
 }
 .trace-row { padding: 3px 0; border-bottom: 1px solid rgba(127,166,168,0.15); }
 .trace-row.error { color: var(--coral); }
+
+
+
+ #langSelect{
+    padding-left:10px;
+   margin: 0 10px;
+    border-radius:var(--radius-sm);
+    /* text-align: center; */
+    height:40px;
+    width:150px;
+    border-color: transparent;
+    background-color:#161920;
+    color: var(--white);
+    cursor: pointer;
+    font-size: 1rem;
+    outline: transparent;
+}
+
+#langSelect:hover{
+
+    outline:1px solid gray;
+
+    transition: outline 0.5s ease-in-out;
+}
+
+ 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* Styling  */
+body {
+  background-color: #0d1117;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.custom-dropdown {
+  position: relative;
+  display: inline-block;
+  width: 160px;
+}
+
+/* Main Trigger Button */
+.dropdown-btn {
+  width: 100%;
+  padding: 10px 14px;
+  background-color: #161b22;
+  color: #f0f6fc;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.dropdown-btn:hover {
+  background-color: #21262d;
+  border-color: #8b949e;
+}
+
+/* Floating Options List */
+.dropdown-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  width: 100%;
+  max-height: 250px;
+  overflow-y: auto;
+  background-color: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+  list-style: none;
+  padding: 4px;
+  margin: 0;
+  display: none;
+  z-index: 100;
+}
+
+.dropdown-menu.show {
+  display: block;
+}
+
+/* Individual Option Items */
+.dropdown-menu li {
+  padding: 8px 12px;
+  color: #c9d1d9;
+  font-size: 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.dropdown-menu li:hover {
+  background-color: #21262d;
+  color: #ffffff;
+}
+
+.dropdown-menu li.active {
+  background-color: #1f6feb22;
+  color: #58a6ff;
+  font-weight: 600;
+}
+
+/* Custom Scrollbar */
+.dropdown-menu::-webkit-scrollbar {
+  width: 6px;
+}
+.dropdown-menu::-webkit-scrollbar-thumb {
+  background-color: #30363d;
+  border-radius: 4px;
+}
