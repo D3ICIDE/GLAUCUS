@@ -24,11 +24,13 @@ public class Config {
     public static String tokenRouterApi= dotenv.get("token_router_api");
     public final static String nvidiaApi = dotenv.get("nvidia_api");
     public static final String exaApi = dotenv.get("exa_api");
-    public final static String groq_api = dotenv.get("groq_api");
-    public final static String open_router_api = dotenv.get("open_router_api");
-    public final static String weather_api = dotenv.get("weather_api");
-    public static final String tavily_api = dotenv.get("tavily_api");
-    public static final String gemini_api = dotenv.get("gemini_api");
+    public final static String groqApi = dotenv.get("groq_api");
+    public final static String openRouterApi = dotenv.get("open_router_api");
+    public final static String weatherApi = dotenv.get("weather_api");
+    public static final String tavilyApi = dotenv.get("tavily_api");
+    public static final String geminiApi = dotenv.get("gemini_api");
+    public static final String azureSpeechApi = dotenv.get("azure_speech_key");
+    public static final String azureSpeechRegion = dotenv.get("azure_speech_region");
 
     public static final String DB_Password = dotenv.get("DB_Password");
 

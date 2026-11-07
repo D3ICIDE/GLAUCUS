@@ -5,8 +5,8 @@ import java.util.concurrent.ExecutionException;
 
 public class VoiceManager {
 
-    private static final String SPEECH_KEY = System.getenv("AZURE_SPEECH_KEY");
-    private static final String SPEECH_REGION = System.getenv("AZURE_SPEECH_REGION");
+    private static final String SPEECH_KEY = Config.azureSpeechApi;
+    private static final String SPEECH_REGION = Config.azureSpeechRegion;
 
     private static final String RECOGNITION_LANGUAGE = "hi-IN";
     private static final String SYNTHESIS_VOICE = "hi-IN-SwaraNeural";
