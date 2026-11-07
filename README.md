@@ -11,7 +11,6 @@ GLAUCUS is a conversational, multi-agent platform that answers marine and coasta
 
 Every fact in an answer comes from a verified data store, and every geofence decision is computed by a spatial database, never by the language model.
 
-> Built for Smart India Hackathon 2026, problem statement SIH26176 (ISRO).
 
 ---
 
