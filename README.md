@@ -229,7 +229,6 @@ Then serve the folder and open it in a browser:
 
 ```bash
 cd src/frontend
-python3 -m http.server 5500
 # open http://localhost:5500
 ```
 
