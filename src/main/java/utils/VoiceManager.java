@@ -160,14 +160,4 @@ public class VoiceManager {
         }
         return false;
     }
-
-    public static void main(String[] args) {
-        // Example: listen, then echo back what was heard
-        String heard = voice();
-        if (!heard.isEmpty()) {
-            speak("आपने कहा: " + heard);
-        } else {
-            speak("मुझे कुछ सुनाई नहीं दिया।");
-        }
-    }
 }

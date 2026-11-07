@@ -20,8 +20,8 @@ public class FetchLocation {
 
     }
 
-    public static void main(String[] args) {
-        System.out.println(FetchLocation.getCurrentLocation());
-    }
+//    public static void main(String[] args) {
+//        System.out.println(FetchLocation.getCurrentLocation());
+//    }
 
 }

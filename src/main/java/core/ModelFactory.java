@@ -7,7 +7,7 @@ import dev.langchain4j.model.googleai.GoogleAiGeminiStreamingChatModel;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import utils.Config;
 
-/** One place that knows how each provider's model is built. */
+
 public final class ModelFactory {
     private ModelFactory() {}
 

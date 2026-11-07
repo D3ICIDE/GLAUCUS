@@ -17,7 +17,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class Orchestration {
-    public static enum RequestCategory {
+    public enum RequestCategory {
         DOMAIN, SMALL_TALK
     }
     private static AgentMonitor monitor = new AgentMonitor();

@@ -40,7 +40,7 @@ public class MapContext {
         }
         return out;
     }
-    // ---------------- new: full hazard geometry, recorded directly by the tool that found it ----------------
+    // ----------------  full hazard geometry, recorded directly by the tool that found it ----------------
 
     public record HazardGeometryEntry(String region,String issuedBy,String type,String source, String riskLevel, String geometryJson, String fetchedAt,JsonElement message,String issued_at) {}
 
