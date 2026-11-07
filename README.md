@@ -165,7 +165,7 @@ cp .env.example .env
 
 | Variable (in `.env`) | Used for |
 |---|---|
-| `DB_Password` | Password for the local `postgres` user (add this line in core.Config.java) |
+| `DB_Password` | Password for the local `postgres` user |
 | `gemini_api` | Google Gemini models |
 | `groq_api` | Groq-hosted models (Supervisor) |
 | `open_router_api`, `token_router_api`, `mistral_api` | Optional OpenRouter, TokenRouter and Mistral models |
@@ -179,7 +179,7 @@ Model names, base URLs and data-source URLs are defined in `src/main/java/utils/
 
 ### 4. Load data
 
-Each fetcher in `src/main/java/fetchers/` is a standalone program that fills its tables. Run the ones you need, for example:
+Each fetcher in `src/main/java/fetchers/` is a standalone program that fills its tables. They are supposed to be run based on a schedule automatically but its a *work in progress* so for now Run the ones you need, for example:
 
 ```bash
 mvn compile exec:java -Dexec.mainClass=fetchers.PotentialFishingZoneFetcher
@@ -210,8 +210,11 @@ Then serve the folder and open it in a browser:
 
 ```bash
 cd src/frontend
-# open http://localhost:5500
 ```
+Open src/frontend/index.html with your IDE’s built-in web server or Live Server (port 5500)”
+# open http://localhost:5500
+
+
 
 The client expects the backend at `http://localhost:8080` (see `API_BASE` in `app.js`). Keys in `config.js` are visible to anyone who loads the page, so use it for local development only.
 
