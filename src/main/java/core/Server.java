@@ -42,7 +42,7 @@ public class Server {
         String sessionId = exchange.getRequestURI().getQuery().split("=")[1];
         exchange.getResponseHeaders().set("Content-Type", "text/event-stream");
         exchange.getResponseHeaders().set("Cache-Control", "no-cache");
-        exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*"); // TODO: lock down for prod
+        exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*"); // TODO
         exchange.sendResponseHeaders(200, 0);
         orchestration.getBroker().register(sessionId, exchange.getResponseBody());
     }

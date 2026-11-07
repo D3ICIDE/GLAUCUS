@@ -138,7 +138,7 @@ header {
 }
 
 .toggle.on .toggle-knob {
-    left: 22px;
+    left: 23px;
 }
 
 /* ---------- MAIN SPLIT ---------- */
@@ -737,7 +737,7 @@ header {
 .sa-badge {
     position: absolute;
     top: 20px;
-    left: 133px;
+    right: 80px;
     z-index: 6000;
     display: flex;
     align-items: center;
@@ -805,13 +805,10 @@ background-color:#161920;
 
 
 #langSelect:hover{
-
-
-    outline:1px solid gray;
-
-
-    transition: outline 0.5s ease-in-out;
+    outline:1px solid gray;
+    transition: outline 0.3s ease-in-out;
 }
+
 
 
 

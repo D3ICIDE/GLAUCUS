@@ -1,3 +1,5 @@
+import { animate, svg, utils } from 'https://esm.sh/animejs';
+
 // ---------------- BACKEND CONFIG ----------------
 const API_BASE = 'http://localhost:8080'; // LocalDevServer — swap once a real host exists
 const sessionId = crypto.randomUUID();
@@ -72,9 +74,6 @@ function initMap(){
 
     loadNearbyPfz();
 
-    // NEW: only auto-run the initial hazard check once we trust the coordinates —
-    // otherwise a zero-hit check at the unverified default location would wipe
-    // any hazards already drawn from chat and pop the "all clear" alert.
     if (hasRealLocation) {
         requestGeofenceCheck(currentLat, currentLon, { immediate: true });
     }
@@ -705,13 +704,77 @@ function addBotMessage(text, tag, warn, trace, elapsedMs){
     return wrap;
 }
 
+// ---------------- LOADING DOT (anime.js polygon morph, scaled to a ~10px dot) ----------------
+
+function generateDotPoints(){
+    const total = utils.random(15, 40);
+    const r1 = utils.random(10, 30);
+    const r2 = 35;
+    const cx = 50, cy = 50;
+    const isOdd = n => n % 2;
+    let points = '';
+    for (let i = 0, l = isOdd(total) ? total + 1 : total; i < l; i++) {
+        const r = isOdd(i) ? r1 : r2;
+        const a = (2 * Math.PI * i / l) - Math.PI / 2;
+        const x = cx + utils.round(r * Math.cos(a), 0);
+        const y = cy + utils.round(r * Math.sin(a), 0);
+        points += `${x},${y} `;
+    }
+    return points;
+}
+
+// Starts the morph loop on the two polygons inside a given loading bubble,
+// and stashes a handle on the wrapper element so it can be stopped later.
+function startLoadingDot(wrap){
+    const $path1 = wrap.querySelector('.loading-dot-path-1');
+    const $path2 = wrap.querySelector('.loading-dot-path-2');
+    if (!$path1 || !$path2) return;
+
+    utils.set($path1, { points: generateDotPoints() });
+    utils.set($path2, { points: generateDotPoints() });
+
+    wrap._loadingDotStopped = false;
+
+    function loop(){
+        if (wrap._loadingDotStopped) return;
+        utils.set($path2, { points: generateDotPoints() });
+        wrap._loadingDotAnim = animate($path1, {
+            points: svg.morphTo($path2),
+            ease: 'inOutCirc',
+            duration: 500,
+            onComplete: loop
+        });
+    }
+    loop();
+}
+
+// Call this before removing a loading bubble from the DOM — otherwise the
+// onComplete->loop chain keeps firing forever against a detached element.
+function stopLoadingDot(wrap){
+    if (!wrap) return;
+    wrap._loadingDotStopped = true;
+    if (wrap._loadingDotAnim) {
+        wrap._loadingDotAnim.pause();
+        wrap._loadingDotAnim = null;
+    }
+}
+
+function removeLoadingMessage(wrap){
+    stopLoadingDot(wrap);
+    wrap.remove();
+}
+
 function addLoadingMessage(){
     const wrap = document.createElement('div');
     wrap.className = 'msg bot';
     wrap.innerHTML = `
-      <div class="bot-avatar">O</div>
+      <div class="bot-avatar"></div>
       <div>
         <div class="bot-bubble loading">
+          <svg class="loading-dot" viewBox="0 0 100 100" width="30" height="30" aria-hidden="true" style="vertical-align: middle;">
+            <polygon class="loading-dot-path-1" points="" fill="currentColor"></polygon>
+            <polygon class="loading-dot-path-2" points="" fill="none"></polygon>
+          </svg>
           <span class="loading-text">Thinking…</span>
           <span class="loading-timer">0s</span>
         </div>
@@ -719,6 +782,8 @@ function addLoadingMessage(){
     `;
     log.appendChild(wrap);
     log.scrollTop = log.scrollHeight;
+
+    startLoadingDot(wrap);
     return wrap;
 }
 
@@ -758,12 +823,15 @@ function startAgentStream(loadingEl, startTime){
                 answerStarted = true;
                 bubbleEl.classList.add('answer-streaming');
                 textEl.textContent = '';
+                stopLoadingDot(loadingEl);
+                const dotEl = loadingEl.querySelector('.loading-dot');
+                if (dotEl) dotEl.style.display = 'none';
             }
             streamedText += evt.text;
             textEl.textContent = streamedText;
         } else if (!answerStarted) {
-            if (evt.type === 'agent_start') textEl.textContent = `⏳ ${evt.agent} working…`;
-            if (evt.type === 'agent_end')   textEl.textContent = `✅ ${evt.agent} done — continuing…`;
+            if (evt.type === 'agent_start') textEl.textContent = `${evt.agent} working…`;
+            if (evt.type === 'agent_end')   textEl.textContent = `${evt.agent} done — continuing…`;
             if (evt.type === 'agent_error') textEl.textContent = `⚠ ${evt.agent} hit an error…`;
         }
 
@@ -813,7 +881,7 @@ async function sendMessage(){
 
         const elapsedMs = performance.now() - startTime;
 
-        loadingEl.remove();
+        removeLoadingMessage(loadingEl);
         addBotMessage(data.text, data.tag, data.warn, currentTrace, elapsedMs);
         speakInUserLanguage(stripHtml(data.text));
 
@@ -847,7 +915,7 @@ async function sendMessage(){
     } catch (err) {
         setConnState(false);
         if (agentEventSource) { agentEventSource.close(); agentEventSource = null; }
-        loadingEl.remove();
+        removeLoadingMessage(loadingEl);
         addBotMessage("Couldn't reach the ORCA backend — is LocalDevServer running on :8080? Falling back to a general answer.", 'OFFLINE', true);
         const r = generateResponse(text);
         addBotMessage(r.text, r.tag, r.warn);
@@ -1043,3 +1111,10 @@ function formatElapsed(ms){
     const seconds = Math.round(totalSeconds % 60);
     return `${minutes}m ${seconds}s`;
 }
+// Scoping to Global
+window.sendMessage = sendMessage;
+window.toggleMap = toggleMap;
+window.selectSvaDay = selectSvaDay;
+window.dismissSystemAlert = dismissSystemAlert;
+window.onHazardBadgeClick = onHazardBadgeClick;
+window.toggleListening = toggleListening;

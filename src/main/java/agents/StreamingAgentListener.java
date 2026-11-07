@@ -41,8 +41,6 @@ public class StreamingAgentListener implements AgentListener {
 
     @Override
     public void onAgentInvocationError(AgentInvocationError error) {
-        // sessionId retrieval depends on what AgentInvocationError exposes —
-        // if it has agenticScope(), same pattern as above
         broker.publish("unknown", Map.of(
                 "type", "agent_error",
                 "message", String.valueOf(error)

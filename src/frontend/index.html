@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ORCA — Marine EcOsystem Reasoning with Collaborative Agents</title>
+    <title>GLAUCUS — Marine EcOsystem Reasoning with Collaborative Agents</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="stylesheet" href="./style.css">
@@ -21,7 +21,7 @@
             <span class="coords-readout" id="coordsReadout">09.28°N · 79.31°E</span>
         </div>
         <div class="header-right">
-            <span class="toggle-label">Chart view</span>
+            <span class="toggle-label">Map</span>
             <div class="toggle" id="mapToggle" onclick="toggleMap()">
                 <div class="toggle-knob"></div>
             </div>
@@ -76,8 +76,7 @@
 <script src="https://cdn.jsdelivr.net/npm/microsoft-cognitiveservices-speech-sdk@latest/distrib/browser/microsoft.cognitiveservices.speech.sdk.bundle-min.js"></script>
 <script src="https://aka.ms/csspeech/jsbrowserpackageraw"></script>
 <script src="config.js"></script>
-
-<script src="app.js"></script>
+<script type="module" src="app.js"></script>
 
 
 
