@@ -32,11 +32,9 @@ Every fact in an answer comes from a verified data store, and every geofence dec
 ## Key features
 
 - **Multi-agent reasoning.** A Supervisor decomposes each request and invokes only the sub-agents the question needs (risk, geo-spatial, data discovery, ocean analytics, weather, visualisation, reporting).
-- **Grounded answers.** The LLM can only call a fixed set of typed tools. It never writes raw SQL and never browses the internet.
 - **Geofencing and hazards.** Containment, proximity and nearest-zone checks run inside PostgreSQL/PostGIS and return hazard geometry that the map can draw.
 - **Official data.** Warnings and advisories from IMD, NDMA SACHET, RSMC and INCOIS are collected by fetchers into the database.
 - **Multilingual and voice.** Language detection, translation and speech input/output through Azure AI services.
-- **Streaming and explainability.** Answers stream token by token over Server-Sent Events, and agent execution can be traced.
 - **Live map UI.** A Leaflet web client with chat, potential fishing zones, hazard overlays and alerts.
 
 ## How it works
@@ -55,16 +53,16 @@ Every fact in an answer comes from a verified data store, and every geofence dec
 
 ## Agents
 
-| Agent | Responsibility |
-|---|---|
-| `GlaucusSupervisor` | Understands intent, plans the task and routes work to sub-agents |
+| Agent | Responsibility                                                                                |
+|---|-----------------------------------------------------------------------------------------------|
+| `GlaucusSupervisor` | Understands intent, plans the task and routes work to sub-agents                              |
 | `RiskAssessmentAgent` | Combines hazards and conditions into a risk level and safety advice for one or more positions |
-| `GeoSpatialReasoningAgent` | Resolves places, zones and distances |
-| `MarineDataDiscoveryAgent` | Finds which marine datasets and advisories apply to the question |
-| `OceanAnalyticsAgent` | Sea-surface temperature, waves, currents and wind around a point |
-| `WeatherIntelligenceAgent` | Current weather and warnings |
-| `VisualizationAgent` | Prepares map layers and visual output |
-| `ReportingAgent` | Writes the user-facing answer and streams it |
+| `GeoSpatialReasoningAgent` | Resolves places, zones and distances                                                          |
+| `MarineDataDiscoveryAgent` | Finds which marine datasets and advisories apply to the question                              |
+| `OceanAnalyticsAgent` | WiP                                                                                           |
+| `WeatherIntelligenceAgent` | WiP                                                                                           |
+| `VisualizationAgent` | WiP                                                                                           |
+| `ReportingAgent` | Writes the user-facing answer and streams it                                                  |
 
 The agents live in `src/main/java/agents/`, and `GlaucusPipeline` wires them together. Only the last agent in a sequence can stream, so the Supervisor runs to completion first and the Reporting agent then streams the final answer.
 
@@ -206,18 +204,9 @@ Copy the example config and add your browser-side Azure keys:
 cp src/frontend/config.example.js src/frontend/config.js
 ```
 
-Then serve the folder and open it in a browser:
-
-```bash
-cd src/frontend
-```
-Open src/frontend/index.html with your IDE’s built-in web server or Live Server (port 5500)”
-# open http://localhost:5500
-
-
+Then open the client in a browser. Most IDEs can serve it directly: open `src/frontend/index.html` with your IDE's built-in web server or Live Server (port 5500).
 
 The client expects the backend at `http://localhost:8080` (see `API_BASE` in `app.js`). Keys in `config.js` are visible to anyone who loads the page, so use it for local development only.
-
 ## API reference
 
 | Method and path | Description |
