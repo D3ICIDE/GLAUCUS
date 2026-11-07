@@ -41,27 +41,8 @@ Every fact in an answer comes from a verified data store, and every geofence dec
 
 ## How it works
 
-```
- Web client (Leaflet map, chat, voice)
-        |  HTTP + SSE
-        v
- API server (Java HttpServer, virtual threads)
-        |
-        v
- Supervisor / Orchestrator  (LangChain4j agentic)
-   |- Risk Assessment       |- Geo-Spatial Reasoning
-   |- Marine Data Discovery |- Ocean Analytics
-   |- Weather Intelligence  |- Visualization
-   '- Reporting (streams the final answer)
-        |
-        v
- Typed tool layer  (fixed functions only: no raw SQL, no live web)
-        |
-        v
- PostgreSQL + PostGIS   <----  Fetchers  <----  IMD, NDMA SACHET,
- (hazards, POIs, EEZ,                           RSMC, INCOIS, ...
-  ocean readings)
-```
+<img width="942" height="795" alt="image" src="https://github.com/user-attachments/assets/3eb1cb9e-6ce3-484b-8d85-cb21bd3898ba" />
+
 
 **Design rule:** the data layer and the language layer are separate. Fetchers collect and store facts; the agents only read them through typed tools. If a source is down, the answer says data is missing instead of inventing it.
 
@@ -184,7 +165,7 @@ cp .env.example .env
 
 | Variable (in `.env`) | Used for |
 |---|---|
-| `DB_Password` | Password for the local `postgres` user (add this line; it is not in `.env.example` yet) |
+| `DB_Password` | Password for the local `postgres` user (add this line in core.Config.java) |
 | `gemini_api` | Google Gemini models |
 | `groq_api` | Groq-hosted models (Supervisor) |
 | `open_router_api`, `token_router_api`, `mistral_api` | Optional OpenRouter, TokenRouter and Mistral models |
