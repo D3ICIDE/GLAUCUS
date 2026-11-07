@@ -234,6 +234,18 @@ The web client also calls `/api/v1/poi/nearby`, which the server does not serve 
 - Points-of-interest endpoint (`/api/v1/poi`) and route endpoint (`/api/v1/routeOptimization`)
 - Automatic scheduled refresh of all data sources
 
+  ##Screenshot
+  <img width="1891" height="868" alt="image" src="https://github.com/user-attachments/assets/4d985209-bd99-4cc5-8135-ab8234d8d905" />
+  <img width="1903" height="869" alt="image" src="https://github.com/user-attachments/assets/a6ac6ba0-6878-443e-92f9-7ca1182d62b6" />
+  <img width="1904" height="847" alt="image" src="https://github.com/user-attachments/assets/120e3561-6749-45e3-8b30-be9981e0fbb9" />
+  <img width="1901" height="862" alt="image" src="https://github.com/user-attachments/assets/8445beff-3062-45ef-8255-17f4991a945e" />
+  <img width="1908" height="878" alt="image" src="https://github.com/user-attachments/assets/73eb50da-6aef-44d6-9aa9-ce0bb32b8e74" />
+
+
+
+
+
+
 ## Disclaimer
 
 GLAUCUS is a decision-support aid. Official warnings from IMD, INCOIS, NDMA and RSMC remain the authority; always follow them.
