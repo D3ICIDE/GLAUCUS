@@ -16,6 +16,8 @@ public class Config {
     public static final String EEZ_POLYGON_Endpoint =
             "https://geo.vliz.be/geoserver/wfs?service=WFS&version=1.1.0&request=GetFeature&typeName=MarineRegions:eez&outputFormat=application/json&CQL_FILTER=mrgid%20IN%20(8480,8333)";
     
+
+
     //API KEYS
     static Dotenv dotenv = Dotenv.load();
     public static String mistralApi= dotenv.get("mistral_api");
@@ -27,6 +29,8 @@ public class Config {
     public final static String weather_api = dotenv.get("weather_api");
     public static final String tavily_api = dotenv.get("tavily_api");
     public static final String gemini_api = dotenv.get("gemini_api");
+
+    public static final String DB_Password = dotenv.get("DB_Password");
 
     //LLM Models
     private static volatile String currentUserMessage;
